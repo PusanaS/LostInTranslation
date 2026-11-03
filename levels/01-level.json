@@ -1,0 +1,51 @@
+{
+  "format": "lost-in-translation-level",
+  "version": 3,
+  "name": "01-level",
+  "maps": [
+	[
+	  "##.##",
+	  "#...#",
+	  "#...#",
+	  "#...#",
+      "#####"
+	],
+	[
+	  "##.##",
+	  "#...#",
+	  "#...#",
+	  "#...#",
+      "#####"
+	]
+  ],
+  "start": [
+	[
+	  2,
+	  3
+	],
+	[
+	  3,
+	  3
+	]
+  ],
+  "goal": [
+	[
+	  2,
+	  0
+	],
+	[
+	  2,
+	  0
+	]
+  ],
+  "rules": [
+	"normal",
+    "normal"
+  ],
+  "seedLimit": 2,
+  "translation": {
+	"title": "The river takes witches",
+	"body": "Since ancient times, people have hated witches for powers they could not control. When they caught a witch, they threw her into the river.\n\nStep into a river, and your witch will drown.",
+	"illustration": "river"
+  }
+}

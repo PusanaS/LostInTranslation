@@ -1,0 +1,51 @@
+{
+  "format": "lost-in-translation-level",
+  "version": 3,
+  "name": "02-level",
+  "maps": [
+    [
+      "#####",
+      "#...#",
+      "#.W.#",
+      "#...#",
+      "#####"
+    ],
+    [
+      "#####",
+      "#...#",
+      "#...#",
+      "#...#",
+      "#####"
+    ]
+  ],
+  "start": [
+    [
+      2,
+      3
+    ],
+    [
+      2,
+      3
+    ]
+  ],
+  "goal": [
+    [
+      2,
+      1
+    ],
+    [
+      2,
+      1
+    ]
+  ],
+  "rules": [
+    "normal",
+    "normal"
+  ],
+  "seedLimit": 3,
+  "translation": {
+    "title": "Seeds across time",
+    "body": "People had reason to fear them: a powerful witch could travel through time, reshaping both past and present.\n\nPlant a seed in the past, and a tree grows in the present.",
+    "illustration": "seed"
+  }
+}
