@@ -4,6 +4,7 @@ const Loader = preload("res://scripts/level_loader.gd")
 const Board = preload("res://scripts/board_view.gd")
 const TranslationBook = preload("res://scripts/translation_book.gd")
 const TutorialArt = preload("res://scripts/tutorial_art.gd")
+const StarField = preload("res://scripts/star_field.gd")
 @export var art: Resource
 var engine: RefCounted
 var state: Dictionary
@@ -19,6 +20,8 @@ var next_button: Button
 var replay_button: Button
 var pause_button: Button
 var seed_hud: Label
+var seed_frame: PanelContainer
+var seed_flash_tween: Tween
 var file_dialog: FileDialog
 var toast: PanelContainer
 var toast_label: Label
@@ -41,6 +44,7 @@ var translation_full_text := ""
 var is_translating := false
 var board_hosts: Array = []
 var seed_icon: TextureRect
+var fx_layer: Control
 
 func _ready() -> void:
 	_build_ui()
@@ -64,7 +68,34 @@ func button_for(text: String, callback: Callable, parent: Node) -> Button:
 	parent.add_child(button)
 	return button
 
+func _icon_button(icon_text: String, callback: Callable, parent: Node, tip: String) -> Button:
+	var button := Button.new()
+	button.text = icon_text
+	button.custom_minimum_size = Vector2(56, 56)
+	button.focus_mode = Control.FOCUS_NONE
+	button.tooltip_text = tip
+	button.add_theme_font_size_override("font_size", 28)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("13232cf0")
+	style.border_color = Color("3d6578")
+	style.set_border_width_all(1)
+	style.corner_radius_top_left = 12; style.corner_radius_top_right = 12
+	style.corner_radius_bottom_left = 12; style.corner_radius_bottom_right = 12
+	button.add_theme_stylebox_override("normal", style)
+	var hover := style.duplicate()
+	hover.bg_color = Color("1a3542f0")
+	hover.border_color = Color("7ec8c4")
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", hover)
+	button.pressed.connect(callback)
+	parent.add_child(button)
+	return button
+
 func _build_ui() -> void:
+	# Starfield sits behind boards / HUD.
+	var stars := StarField.new()
+	add_child(stars)
+	move_child(stars, 0)
 	# Dev-only controls remain alive for JSON import/tests, but the play HUD stays clean.
 	picker = OptionButton.new(); picker.visible = false; picker.item_selected.connect(_select_level); add_child(picker)
 	title_label = label_for(""); title_label.visible = false; add_child(title_label)
@@ -75,7 +106,7 @@ func _build_ui() -> void:
 	var rooms := HBoxContainer.new()
 	rooms.set_anchors_preset(Control.PRESET_FULL_RECT)
 	rooms.offset_left = 28; rooms.offset_right = -28
-	rooms.offset_top = 82; rooms.offset_bottom = -28
+	rooms.offset_top = 88; rooms.offset_bottom = -28
 	rooms.add_theme_constant_override("separation",10)
 	add_child(rooms)
 	for _i in range(2):
@@ -83,7 +114,7 @@ func _build_ui() -> void:
 		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		var panel_style := StyleBoxFlat.new()
-		panel_style.bg_color = Color("101b25")
+		panel_style.bg_color = Color("101b25cc")
 		panel_style.border_color = Color("29485b")
 		panel_style.set_border_width_all(1)
 		panel_style.corner_radius_top_left = 12; panel_style.corner_radius_top_right = 12
@@ -98,19 +129,43 @@ func _build_ui() -> void:
 		board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		host.add_child(board)
 		boards.append(board); board_hosts.append(host)
+	fx_layer = Control.new()
+	fx_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	fx_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(fx_layer)
 	var hud := HBoxContainer.new()
 	hud.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	hud.offset_left = 28; hud.offset_right = -28
-	hud.offset_top = 22; hud.offset_bottom = 66
+	hud.offset_top = 16; hud.offset_bottom = 76
+	hud.add_theme_constant_override("separation", 12)
 	add_child(hud)
-	replay_button = button_for("↻  Replay",_reset,hud)
-	replay_button.tooltip_text = "Replay level · R"
-	pause_button = button_for("Ⅱ  Pause",_toggle_pause,hud)
-	pause_button.tooltip_text = "Pause · Esc"
+	replay_button = _icon_button("↻", _reset, hud, "Replay · R")
+	pause_button = _icon_button("⏸", _toggle_pause, hud, "Pause · Esc")
 	var spacer := Control.new(); spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL; hud.add_child(spacer)
-	var seeds := HBoxContainer.new(); seeds.add_theme_constant_override("separation",7); hud.add_child(seeds)
-	seed_icon = TextureRect.new(); seed_icon.texture = art.seed_texture; seed_icon.custom_minimum_size = Vector2(28,28); seed_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; seed_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; seeds.add_child(seed_icon)
-	seed_hud = label_for("0",22); seed_hud.vertical_alignment = VERTICAL_ALIGNMENT_CENTER; seeds.add_child(seed_hud)
+	seed_frame = PanelContainer.new()
+	seed_frame.pivot_offset = Vector2(54, 28)
+	var seed_style := StyleBoxFlat.new()
+	seed_style.bg_color = Color("152820f2")
+	seed_style.border_color = Color("d6b56a")
+	seed_style.set_border_width_all(2)
+	seed_style.corner_radius_top_left = 14; seed_style.corner_radius_top_right = 14
+	seed_style.corner_radius_bottom_left = 14; seed_style.corner_radius_bottom_right = 14
+	seed_style.content_margin_left = 14; seed_style.content_margin_right = 16
+	seed_style.content_margin_top = 8; seed_style.content_margin_bottom = 8
+	seed_frame.add_theme_stylebox_override("panel", seed_style)
+	hud.add_child(seed_frame)
+	var seeds := HBoxContainer.new(); seeds.add_theme_constant_override("separation",10)
+	seed_frame.add_child(seeds)
+	seed_icon = TextureRect.new()
+	seed_icon.texture = art.seed_texture if art != null else null
+	seed_icon.custom_minimum_size = Vector2(40,40)
+	seed_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	seed_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	seeds.add_child(seed_icon)
+	seed_hud = label_for("0", 28)
+	seed_hud.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	seed_hud.add_theme_color_override("font_color", Color("f3e7c0"))
+	seeds.add_child(seed_hud)
 	file_dialog = FileDialog.new()
 	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -312,9 +367,21 @@ func _flash_right_tile(x: int, y: int) -> void:
 	if boards.size() < 2: return
 	boards[1].flash_tile(x, y)
 
+func _flash_seed_hud() -> void:
+	if seed_frame == null: return
+	if seed_flash_tween != null and seed_flash_tween.is_valid(): seed_flash_tween.kill()
+	seed_frame.modulate = Color.WHITE
+	seed_hud.modulate = Color.WHITE
+	seed_flash_tween = create_tween()
+	for _i in range(2):
+		seed_flash_tween.tween_property(seed_frame, "modulate", Color(1.0, 0.25, 0.28, 1.0), 0.12)
+		seed_flash_tween.parallel().tween_property(seed_hud, "modulate", Color(1.0, 0.35, 0.35, 1.0), 0.12)
+		seed_flash_tween.tween_property(seed_frame, "modulate", Color.WHITE, 0.12)
+		seed_flash_tween.parallel().tween_property(seed_hud, "modulate", Color.WHITE, 0.12)
+
 func _handle_plant_blocked(reason: String) -> void:
 	if reason.contains("hết hạt"):
-		_toast("Out of seeds. Pick one up to plant.")
+		_flash_seed_hud()
 		return
 	if reason.contains("đang đứng") or reason.contains("cùng tọa độ"):
 		_toast("Cannot plant while both witches share the same tile.")
@@ -379,11 +446,15 @@ func _reset() -> void:
 
 func _act(action: int) -> void:
 	if engine == null or is_transitioning or is_paused or engine.won(state) or engine.lost(state): return
+	var recalling := false
+	var recall_cell: Array = []
 	if action == 4:
 		var reason: String = engine.plant_reason(state)
 		if not reason.is_empty():
 			_handle_plant_blocked(reason)
 			return
+		recall_cell = state.p[0].duplicate()
+		recalling = engine.coord(recall_cell) in state.trees
 	var next: Dictionary = engine.advance(state,action)
 	if next == state:
 		if action < 4:
@@ -395,8 +466,54 @@ func _act(action: int) -> void:
 	history.append(state.duplicate(true))
 	state = next
 	_render()
+	if recalling:
+		_play_seed_recall(recall_cell)
 	if engine.lost(state): _show_loss_popup()
 	elif engine.won(state): _begin_book_transition()
+
+func _seed_hud_center() -> Vector2:
+	if seed_frame == null: return get_viewport_rect().size * Vector2(0.9, 0.08)
+	return seed_frame.get_global_rect().get_center()
+
+func _play_seed_recall(cell: Array) -> void:
+	if art == null or fx_layer == null or boards.is_empty(): return
+	var start: Vector2 = boards[0].seed_screen_center(cell)
+	var target := _seed_hud_center()
+	var flyer := TextureRect.new()
+	flyer.texture = art.seed_texture
+	flyer.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	flyer.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	flyer.custom_minimum_size = Vector2(36, 36)
+	flyer.size = Vector2(36, 36)
+	flyer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	flyer.global_position = start - flyer.size * 0.5
+	fx_layer.add_child(flyer)
+	var flight := create_tween()
+	flight.tween_property(flyer, "global_position", target - flyer.size * 0.5, 0.42).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	flight.parallel().tween_property(flyer, "scale", Vector2(0.65, 0.65), 0.42)
+	flight.tween_callback(func():
+		flyer.queue_free()
+		_burst_seed_hud()
+	)
+
+func _burst_seed_hud() -> void:
+	if seed_frame == null: return
+	seed_frame.scale = Vector2(1.12, 1.12)
+	var pop := create_tween()
+	pop.tween_property(seed_frame, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var center := _seed_hud_center()
+	for i in range(10):
+		var spark := ColorRect.new()
+		spark.color = Color("e6c984", 0.95)
+		spark.size = Vector2(4, 4)
+		spark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		spark.global_position = center
+		fx_layer.add_child(spark)
+		var dir := Vector2.RIGHT.rotated(TAU * float(i) / 10.0) * randf_range(28.0, 54.0)
+		var tw := create_tween()
+		tw.tween_property(spark, "global_position", center + dir, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.parallel().tween_property(spark, "modulate:a", 0.0, 0.35)
+		tw.tween_callback(spark.queue_free)
 
 func _undo() -> void:
 	if is_transitioning or is_paused or history.is_empty(): return
@@ -411,7 +528,7 @@ func _toggle_pause() -> void:
 	if is_transitioning: return
 	is_paused = not is_paused
 	pause_panel.visible = is_paused
-	pause_button.text = "Resume · Esc" if is_paused else "Pause · Esc"
+	pause_button.text = "▶" if is_paused else "⏸"
 
 func _book_origin(room: int) -> Vector2:
 	var viewport_size := get_viewport_rect().size

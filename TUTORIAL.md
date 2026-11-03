@@ -4,6 +4,10 @@ Project root for active Godot work: `C:\Users\Admin\Documents\lost-in-translatio
 
 A mirrored copy may also exist under `D:\Eramus Game\Lost in translation\godot`. Prefer this Documents folder when iterating UI / tutorial.
 
+## Active project path (GitHub)
+
+`D:\Eramus Game\Lost In Translation Project Res\LostInTranslation`
+
 ## Folder map
 
 | Path | Role |
@@ -11,15 +15,27 @@ A mirrored copy may also exist under `D:\Eramus Game\Lost in translation\godot`.
 | `project.godot` | Godot 4.7 project; press **F5** here |
 | `scenes/main.tscn` | Play scene |
 | `scenes/level_editor.tscn` | In-engine level editor |
-| `scripts/main.gd` | HUD, input, win/loss flow, translation screen |
+| `scripts/main.gd` | HUD icons, seed frame, recall FX, win/loss, translation flow |
 | `scripts/puzzle_engine.gd` | Deterministic rules (parity with web `engine.js`) |
-| `scripts/board_view.gd` | Board draw + red tile flash feedback |
-| `scripts/translation_book.gd` | Code-drawn book; left page glyphs **or** tutorial illustration |
+| `scripts/board_view.gd` | Board draw, idle bob, red tile flash |
+| `scripts/star_field.gd` | Soft animated star background |
+| `scripts/translation_book.gd` | Book UI; left glyphs→English; right illustration |
 | `scripts/tutorial_art.gd` | Code-drawn tutorial / loss illustrations |
 | `scripts/lost_clock.gd` | Legacy clock glyph (kept; loss popup now uses tutorial art) |
+| `assets/glyphs/hieroglyph_ref.png` | Stone hieroglyph sheet for left-page glyphs |
 | `levels/*.json` | Shipped levels; optional `translation` block |
 | `art/game_art.tres` | Texture slots for tiles / witches / objects |
 | `tests/` | Headless parity checks vs web fixtures |
+
+## Ingame presentation notes
+
+- Witches idle-bob gently while standing still.
+- Goal books idle-bob with a soft golden halo + spark particles.
+- River tiles show scrolling water lines; ice tiles get diagonal mirror glints.
+- Replay / Pause are icon-only buttons; seed count sits in a gold-framed HUD.
+- Out of seeds: **no toast** — the seed frame + `0` flash red twice.
+- Recalling a seed: seed flies from the plant cell to the HUD, then the frame pops with spark particles.
+- Translation glyphs use `hieroglyph_ref.png` with sandstone keyed out at runtime so only carved ink sits on the parchment.
 
 ## Loader note (important)
 

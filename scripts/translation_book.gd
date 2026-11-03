@@ -2,6 +2,9 @@ extends Control
 
 # Code-drawn parchment book. Left page: glyphs morph into English in reading order
 # with sparkle particles. Right page: tutorial illustration after translation finishes.
+const GLYPH_SHEET: Texture2D = preload("res://assets/glyphs/hieroglyph_ref.png")
+const GLYPH_COLS := 8
+const GLYPH_ROWS := 5
 var open_amount: float = 0.0:
 	set(value):
 		open_amount = clampf(value, 0.0, 1.0)
@@ -30,11 +33,34 @@ var _slots: Array = [] # {ch:String, pos:Vector2, title:bool}
 var _layout_size := Vector2.ZERO
 var _particles: Array = [] # {pos:Vector2, vel:Vector2, age:float, life:float, hue:float}
 var _last_done := -1
+## Sandstone background removed; only carved ink remains for parchment composite.
+var _glyph_cutout: Texture2D
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(900, 520)
+	_prepare_glyph_cutout()
 	set_process(true)
 	queue_redraw()
+
+func _prepare_glyph_cutout() -> void:
+	if GLYPH_SHEET == null: return
+	var src: Image = GLYPH_SHEET.get_image()
+	if src == null: return
+	src = src.duplicate()
+	src.convert(Image.FORMAT_RGBA8)
+	for y in range(src.get_height()):
+		for x in range(src.get_width()):
+			var c := src.get_pixel(x, y)
+			# Stone fill is bright tan; carved grooves are darker brown.
+			var lum := c.r * 0.299 + c.g * 0.587 + c.b * 0.114
+			if lum >= 0.58:
+				src.set_pixel(x, y, Color(0, 0, 0, 0))
+			else:
+				# Keep carving as warm ink with alpha from darkness.
+				var ink_a := clampf((0.58 - lum) / 0.38, 0.0, 1.0)
+				ink_a = pow(ink_a, 0.85)
+				src.set_pixel(x, y, Color(0.32, 0.20, 0.12, ink_a))
+	_glyph_cutout = ImageTexture.create_from_image(src)
 
 func prepare(title: String, body: String, kind: String = "", textures: Resource = null) -> void:
 	page_title = title
@@ -74,12 +100,12 @@ func _ensure_layout() -> void:
 	# Layout against the fully-open page so glyph positions stay stable while the book opens.
 	var metrics := _page_metrics(area, 1.0)
 	var left: Rect2 = metrics.left_text
-	_layout_text_block(page_title, left, true, 17.0, 22.0)
-	var body_top := left.position.y + 36.0
+	_layout_text_block(page_title, left, true, 19.0, 26.0)
+	var body_top := left.position.y + 40.0
 	if not page_title.is_empty():
-		body_top = _slots[_slots.size() - 1].pos.y + 28.0 if not _slots.is_empty() else left.position.y + 40.0
+		body_top = _slots[_slots.size() - 1].pos.y + 34.0 if not _slots.is_empty() else left.position.y + 44.0
 	var body_rect := Rect2(left.position.x, body_top, left.size.x, left.end.y - body_top)
-	_layout_text_block(page_body, body_rect, false, 13.0, 18.0)
+	_layout_text_block(page_body, body_rect, false, 15.0, 24.0)
 
 func _page_metrics(area: Vector2, open_override: float = -1.0) -> Dictionary:
 	var open := open_amount if open_override < 0.0 else open_override
@@ -198,16 +224,18 @@ func _draw_left_translation() -> void:
 		var pos: Vector2 = slot.pos
 		var font_size: float = slot.size
 		var local := cursor - float(i)
+		var glyph_size := font_size * (1.55 if slot.title else 1.7)
+		var glyph_rect := Rect2(pos + Vector2(-2.0, -glyph_size * 0.82), Vector2(glyph_size, glyph_size))
 		if local < 0.0:
-			_draw_glyph(pos + Vector2(font_size * 0.25, -font_size * 0.35), i)
+			_draw_glyph_art(glyph_rect, i)
 		elif local >= 1.0:
 			var ink := Color("513928") if slot.title else Color("5d4430")
 			draw_string(ThemeDB.fallback_font, pos, slot.ch, HORIZONTAL_ALIGNMENT_LEFT, -1, int(font_size), ink)
 		else:
-			# In-place morph: glyph fades out while Latin letter pops in.
+			# In-place morph: carved glyph fades while Latin letter pops in.
 			var glyph_a := 1.0 - local
 			var letter_a := local
-			_draw_glyph(pos + Vector2(font_size * 0.25, -font_size * 0.35), i, glyph_a)
+			_draw_glyph_art(glyph_rect, i, glyph_a)
 			var ink2 := Color("513928", letter_a) if slot.title else Color("5d4430", letter_a)
 			var pop := 1.0 + (1.0 - absf(local - 0.5) * 2.0) * 0.18
 			draw_set_transform(pos, 0.0, Vector2(pop, pop))
@@ -307,7 +335,27 @@ func _illust_seed(rect: Rect2, a: float) -> void:
 	]), Color("e6c984", 0.95 * a))
 	draw_string(ThemeDB.fallback_font, Vector2(rect.position.x + 10, rect.end.y - 10), "Seed then → tree now", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e8d7a4", 0.9 * a))
 
-func _draw_glyph(pos: Vector2, index: int, alpha: float = 0.78) -> void:
+func _glyph_src_rect(index: int) -> Rect2:
+	var sheet: Texture2D = _glyph_cutout if _glyph_cutout != null else GLYPH_SHEET
+	var i := index % (GLYPH_COLS * GLYPH_ROWS)
+	var col := i % GLYPH_COLS
+	var row := int(i / GLYPH_COLS)
+	var tw := float(sheet.get_width())
+	var th := float(sheet.get_height())
+	var gw := tw / float(GLYPH_COLS)
+	var gh := th / float(GLYPH_ROWS)
+	# Inset each cell so we crop a single carved symbol rather than the grid gutters.
+	return Rect2(col * gw + gw * 0.10, row * gh + gh * 0.12, gw * 0.80, gh * 0.76)
+
+func _draw_glyph_art(dest: Rect2, index: int, alpha: float = 1.0) -> void:
+	var sheet: Texture2D = _glyph_cutout if _glyph_cutout != null else GLYPH_SHEET
+	if sheet == null:
+		_draw_glyph_fallback(dest.get_center(), index, alpha)
+		return
+	# Transparent cutout only — sits on parchment with no sandstone plate behind it.
+	draw_texture_rect_region(sheet, dest, _glyph_src_rect(index), Color(1, 1, 1, 0.95 * alpha))
+
+func _draw_glyph_fallback(pos: Vector2, index: int, alpha: float = 0.78) -> void:
 	var ink := Color("604433", alpha)
 	match index % 5:
 		0:
@@ -316,16 +364,12 @@ func _draw_glyph(pos: Vector2, index: int, alpha: float = 0.78) -> void:
 		1:
 			draw_line(pos + Vector2(-9, -8), pos + Vector2(0, 9), ink, 1.7)
 			draw_line(pos + Vector2(0, 9), pos + Vector2(9, -8), ink, 1.7)
-			draw_line(pos + Vector2(-6, 1), pos + Vector2(6, 1), ink, 1.4)
 		2:
 			draw_arc(pos, 9.0, -1.2, 1.5, 12, ink, 1.7)
-			draw_circle(pos + Vector2(2, -1), 1.8, ink)
 		3:
 			draw_line(pos + Vector2(0, -10), pos + Vector2(0, 10), ink, 1.7)
-			draw_line(pos + Vector2(-8, -4), pos + Vector2(8, 4), ink, 1.5)
 		4:
 			draw_arc(pos, 8.5, 0.2, 5.8, 8, ink, 1.5)
-			draw_circle(pos + Vector2(0, -11), 1.6, ink)
 
 func draw_shadow_ellipse(center: Vector2, radius: Vector2, color: Color) -> void:
 	var points := PackedVector2Array()
