@@ -244,11 +244,33 @@ func _build_translation_screen() -> void:
 	translation_body.visible = false
 	translation_panel.add_child(translation_body)
 	translation_next = Button.new()
-	translation_next.text = "Space / →  Turn the page"
+	translation_next.text = "Next page"
 	translation_next.focus_mode = Control.FOCUS_ALL
 	translation_next.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	translation_next.offset_left = -110; translation_next.offset_right = 110
-	translation_next.offset_top = -66; translation_next.offset_bottom = -22
+	translation_next.offset_left = -120; translation_next.offset_right = 120
+	translation_next.offset_top = -70; translation_next.offset_bottom = -20
+	translation_next.custom_minimum_size = Vector2(240, 48)
+	translation_next.add_theme_font_size_override("font_size", 18)
+	translation_next.add_theme_color_override("font_color", Color("f3e7c0"))
+	translation_next.add_theme_color_override("font_hover_color", Color("fff6d8"))
+	translation_next.add_theme_color_override("font_pressed_color", Color("e6c984"))
+	var next_normal := StyleBoxFlat.new()
+	next_normal.bg_color = Color("2a1c14f2")
+	next_normal.border_color = Color("d6b56a")
+	next_normal.set_border_width_all(2)
+	next_normal.corner_radius_top_left = 10; next_normal.corner_radius_top_right = 10
+	next_normal.corner_radius_bottom_left = 10; next_normal.corner_radius_bottom_right = 10
+	next_normal.content_margin_left = 18; next_normal.content_margin_right = 18
+	next_normal.content_margin_top = 10; next_normal.content_margin_bottom = 10
+	var next_hover := next_normal.duplicate()
+	next_hover.bg_color = Color("3a2818f5")
+	next_hover.border_color = Color("f0d78a")
+	var next_pressed := next_normal.duplicate()
+	next_pressed.bg_color = Color("1c140ef5")
+	translation_next.add_theme_stylebox_override("normal", next_normal)
+	translation_next.add_theme_stylebox_override("hover", next_hover)
+	translation_next.add_theme_stylebox_override("pressed", next_pressed)
+	translation_next.add_theme_stylebox_override("focus", next_hover)
 	translation_next.visible = false
 	translation_next.pressed.connect(_continue_after_translation)
 	translation_panel.add_child(translation_next)
@@ -444,11 +466,19 @@ func _reset() -> void:
 	history.clear()
 	_render()
 
+func _ice_input_locked() -> bool:
+	for board in boards:
+		if board.input_locked(): return true
+	return false
+
 func _act(action: int) -> void:
 	if engine == null or is_transitioning or is_paused or engine.won(state) or engine.lost(state): return
+	if _ice_input_locked(): return
 	var recalling := false
 	var recall_cell: Array = []
 	if action == 4:
+		# Planting unlocks at level 3+ (seedLimit > 0). Silent no-op while locked.
+		if engine.seed_limit() == 0: return
 		var reason: String = engine.plant_reason(state)
 		if not reason.is_empty():
 			_handle_plant_blocked(reason)
@@ -631,6 +661,8 @@ func _render() -> void:
 	seed_button.tooltip_text = ""
 	undo_button.disabled = history.is_empty()
 	replay_button.disabled = is_transitioning
+	# Hide seed HUD until planting is unlocked (seedLimit == 0 on early tutorial levels).
+	seed_frame.visible = engine.seed_limit() != 0
 	seed_hud.text = "∞" if remaining < 0 else str(remaining)
 	next_button.visible = false
 	if not engine.lost(state): _hide_loss_popup()

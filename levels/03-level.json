@@ -44,5 +44,10 @@
     "normal",
     "normal"
   ],
-  "seedLimit": 1
+  "seedLimit": 1,
+  "translation": {
+    "title": "A living boundary",
+    "body": "A seed placed in the past becomes a tree in the present — a bridge, a wall, or a lily on dangerous water.\n\nPress SPACE to plant or pick a seed back up.",
+    "illustration": "seed"
+  }
 }

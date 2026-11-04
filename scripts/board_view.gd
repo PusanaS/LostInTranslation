@@ -56,7 +56,8 @@ func update_board(new_engine: RefCounted, new_state: Dictionary, index: int, new
 		move_to = target
 		move_elapsed = 0.0
 		sliding = _movement_touches_ice(old_state.p[room], state.p[room])
-		move_duration = 0.52 if sliding else 0.22
+		# Ice slides always take ~1s; longer paths simply move faster.
+		move_duration = 1.0 if sliding else 0.22
 		moving = true
 	for key in state.trees:
 		if not key in old_state.get("trees", []) and room == 1: growing[key] = 0.0
@@ -79,6 +80,10 @@ func _movement_touches_ice(from: Array, to: Array) -> bool:
 func bump() -> void:
 	bump_elapsed = 0.0
 	queue_redraw()
+
+func input_locked() -> bool:
+	# While an ice slide is playing out, movement input is ignored.
+	return moving and sliding
 
 func _process(delta: float) -> void:
 	var redraw := false

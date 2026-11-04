@@ -1,11 +1,10 @@
 {
   "format": "lost-in-translation-level",
   "version": 3,
-  "name": "07-level",
+  "name": "06-level",
   "maps": [
     [
       "#####",
-      "#...#",
       "#...#",
       "#...#",
       "#...#",
@@ -16,33 +15,32 @@
       "#...#",
       "#.I.#",
       "#...#",
-      "#...#",
       "#####"
     ]
   ],
   "start": [
     [
-      1,
-      4
+      2,
+      3
     ],
     [
-      1,
-      4
+      2,
+      3
     ]
   ],
   "goal": [
     [
       2,
-      2
+      1
     ],
     [
-      2,
-      2
+      3,
+      1
     ]
   ],
   "rules": [
     "normal",
     "normal"
   ],
-  "seedLimit": 1
+  "seedLimit": 0
 }

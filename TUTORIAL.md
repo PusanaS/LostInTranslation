@@ -49,7 +49,7 @@ After both witches stand on their books:
 2. Translation screen opens (`THE TRANSLATION`).
 3. **Left page:** starts as ancient glyphs; each glyph morphs in place into English (title + body), reading order top→bottom / left→right, with sparkle particles at the translation frontier.
 4. **Right page:** tutorial illustration (`translation.illustration`) fades in **only after** the English page is fully translated.
-5. Continue with **Space**, **→**, or the button.
+5. Continue with **Space**, **→**, or the **Next page** button.
 
 Level JSON shape:
 
@@ -71,17 +71,22 @@ Maps themselves are unchanged; the book after a win teaches the **next** idea.
 
 ### Level 1 (`levels/01-level.json`)
 
+- **seedLimit:** `0` — planting locked; seed HUD hidden.
 - **Teaches for later maps:** river water kills witches (drown).
-- **Illustration:** `river` — villagers with spears on the bank; witch struggling in the water (code-drawn + existing witch texture).
+- **Illustration:** `river`
 - **Title:** The river takes witches
-- **Body (EN):** Since ancient times, people have hated witches for powers they could not control. When they caught a witch, they threw her into the river. / Step into a river, and your witch will drown.
 
 ### Level 2 (`levels/02-level.json`)
 
-- **Teaches:** seed in the past → tree in the present (time-linked planting).
-- **Illustration:** `seed` — PAST seed / PRESENT tree split panel.
+- **seedLimit:** `0` — planting still locked; seed HUD hidden.
+- **Teaches next unlock:** press **SPACE** to plant (main planting tutorial card).
+- **Illustration:** `plant_space` — clear SPACE key + past seed → present tree.
 - **Title:** Seeds across time
-- **Body (EN):** People had reason to fear them: a powerful witch could travel through time, reshaping both past and present. / Plant a seed in the past, and a tree grows in the present.
+
+### Level 3 (`levels/03-level.json`)
+
+- **seedLimit:** `1` — planting unlocked; seed HUD visible.
+- **Illustration:** `seed`
 
 ### Later levels
 

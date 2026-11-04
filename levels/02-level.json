@@ -42,10 +42,10 @@
     "normal",
     "normal"
   ],
-  "seedLimit": 3,
+  "seedLimit": 0,
   "translation": {
     "title": "Seeds across time",
-    "body": "People had reason to fear them: a powerful witch could travel through time, reshaping both past and present.\n\nPlant a seed in the past, and a tree grows in the present.",
-    "illustration": "seed"
+    "body": "People had reason to fear them. A powerful witch could travel through time, reshaping both past and present with a single living seed.\n\nOn the next page, planting unlocks. Stand in the past and press SPACE to plant a seed — a tree will rise at the same place in the present. Press SPACE again on that seed to pick it back up.",
+    "illustration": "plant_space"
   }
 }

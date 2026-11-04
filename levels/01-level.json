@@ -42,10 +42,10 @@
 	"normal",
     "normal"
   ],
-  "seedLimit": 2,
+  "seedLimit": 0,
   "translation": {
 	"title": "The river takes witches",
-	"body": "Since ancient times, people have hated witches for powers they could not control. When they caught a witch, they threw her into the river.\n\nStep into a river, and your witch will drown.",
+	"body": "Since ancient times, people have hated witches for powers they could not control. When they caught a witch, they threw her into the river — a trial by water no witch was meant to survive.\n\nBeware every river tile. If your witch steps into the water, she will drown. Keep to dry ground, or undo with Z before the page is lost.",
 	"illustration": "river"
   }
 }
