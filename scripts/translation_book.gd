@@ -260,6 +260,18 @@ func _illust_tex(texture: Texture2D, rect: Rect2, tint: Color) -> void:
 	draw_texture_rect(texture, rect, false, tint)
 
 func _angry_villager(feet: Vector2, alpha: float, spear: bool) -> void:
+	# Prefer the hand-drawn soldier sprite; the code-drawn figure below is only a fallback.
+	var soldier: Texture2D = art.get("soldier_texture") if art != null else null
+	if soldier != null:
+		var h := 70.0
+		var flip := not spear # vary the line-up a little
+		if flip:
+			draw_set_transform(Vector2(feet.x + h * 0.5, feet.y - h), 0.0, Vector2(-1, 1))
+			draw_texture_rect(soldier, Rect2(Vector2.ZERO, Vector2(h, h)), false, Color(1, 1, 1, alpha))
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		else:
+			draw_texture_rect(soldier, Rect2(feet + Vector2(-h * 0.5, -h), Vector2(h, h)), false, Color(1, 1, 1, alpha))
+		return
 	var skin := Color("d7b08a", alpha)
 	var cloth := Color("6b3030", alpha)
 	var wood := Color("8a5a32", alpha)

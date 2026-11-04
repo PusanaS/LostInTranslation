@@ -38,6 +38,12 @@ func _tex(texture: Texture2D, rect: Rect2, tint := Color.WHITE) -> void:
 
 func _angry_villager(feet: Vector2, spear: bool) -> void:
 	var a := reveal
+	# Prefer the hand-drawn soldier sprite; the code-drawn figure below is only a fallback.
+	var soldier: Texture2D = art.get("soldier_texture") if art != null else null
+	if soldier != null:
+		var h := 70.0
+		_tex(soldier, Rect2(feet + Vector2(-h * 0.5, -h), Vector2(h, h)))
+		return
 	var skin := Color("d7b08a", a)
 	var cloth := Color("6b3030", a)
 	var wood := Color("8a5a32", a)
