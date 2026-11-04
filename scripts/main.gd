@@ -4,6 +4,26 @@ const Loader = preload("res://scripts/level_loader.gd")
 const Board = preload("res://scripts/board_view.gd")
 const TranslationBook = preload("res://scripts/translation_book.gd")
 const TutorialArt = preload("res://scripts/tutorial_art.gd")
+const DialogueView = preload("res://scripts/dialogue_view.gd")
+const BGM := {
+	"player_room": "res://assets/handmade/audio/bgm/player_room.mp3",
+	"main_city": "res://assets/handmade/audio/bgm/main_city.mp3",
+	"library": "res://assets/handmade/audio/bgm/library.mp3",
+	"graveyard": "res://assets/handmade/audio/bgm/graveyard.mp3",
+	"storm_chasing": "res://assets/handmade/audio/bgm/storm_chasing.mp3",
+}
+const SFX := {
+	"cube": "res://assets/handmade/audio/sfx/magic_gun.wav",
+	"seal": "res://assets/handmade/audio/sfx/barrier.wav",
+	"win": "res://assets/handmade/audio/sfx/ultimate_burst.wav",
+}
+const BGM_VOLUME_DB := -12.0
+const SFX_VOLUME_DB := -6.0
+# Dimensional-rift palette shared by the HUD panels.
+const ROOM_BG := Color("15112a")
+const ROOM_BORDER := Color("4b3a8a")
+const PANEL_BG := Color("1b1436f5")
+const PANEL_BORDER := Color("b79cff")
 @export var art: Resource
 var engine: RefCounted
 var state: Dictionary
@@ -41,13 +61,24 @@ var translation_full_text := ""
 var is_translating := false
 var board_hosts: Array = []
 var seed_icon: TextureRect
+var dialogue: Control
+var after_dialogue := Callable() # what to run when the current story scene ends
+var level_select_panel: PanelContainer
+var level_select_list: VBoxContainer
+var bgm_player: AudioStreamPlayer
+var bgm_tween: Tween
+var current_bgm := ""
+var sfx_players: Dictionary = {}
+var sfx_tweens: Dictionary = {}
 
 func _ready() -> void:
 	_build_ui()
 	resized.connect(_fit_boards)
 	_load_library()
 	get_window().files_dropped.connect(_files_dropped)
-	if not library.is_empty(): _select_level(0)
+	if not library.is_empty():
+		_select_level(0)
+		_play_story_before(0)
 
 func label_for(text: String, font_size: int = 16) -> Label:
 	var label := Label.new()
@@ -83,8 +114,8 @@ func _build_ui() -> void:
 		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		var panel_style := StyleBoxFlat.new()
-		panel_style.bg_color = Color("101b25")
-		panel_style.border_color = Color("29485b")
+		panel_style.bg_color = ROOM_BG
+		panel_style.border_color = ROOM_BORDER
 		panel_style.set_border_width_all(1)
 		panel_style.corner_radius_top_left = 12; panel_style.corner_radius_top_right = 12
 		panel_style.corner_radius_bottom_left = 12; panel_style.corner_radius_bottom_right = 12
@@ -121,7 +152,27 @@ func _build_ui() -> void:
 	_build_transition_overlay()
 	_build_translation_screen()
 	_build_pause_menu()
+	_build_level_select()
 	_build_loss_popup()
+	dialogue = DialogueView.new()
+	dialogue.art = art
+	dialogue.finished.connect(_on_dialogue_finished)
+	dialogue.music_requested.connect(_play_bgm)
+	add_child(dialogue)
+	bgm_player = AudioStreamPlayer.new()
+	bgm_player.volume_db = BGM_VOLUME_DB
+	add_child(bgm_player)
+
+func _panel_style(bg: Color, border: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = bg
+	style.border_color = border
+	style.set_border_width_all(1)
+	style.corner_radius_top_left = 14; style.corner_radius_top_right = 14
+	style.corner_radius_bottom_left = 14; style.corner_radius_bottom_right = 14
+	style.content_margin_left = 16; style.content_margin_right = 16
+	style.content_margin_top = 12; style.content_margin_bottom = 12
+	return style
 
 func _build_toast() -> void:
 	toast = PanelContainer.new()
@@ -133,8 +184,8 @@ func _build_toast() -> void:
 	toast.offset_bottom = -18
 	toast.modulate.a = 0.0
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color("183735e8")
-	style.border_color = Color("9ed6bd")
+	style.bg_color = Color("231a44e8")
+	style.border_color = PANEL_BORDER
 	style.set_border_width_all(1)
 	style.corner_radius_top_left = 10
 	style.corner_radius_top_right = 10
@@ -203,15 +254,9 @@ func _build_pause_menu() -> void:
 	pause_panel = PanelContainer.new()
 	pause_panel.set_anchors_preset(Control.PRESET_CENTER)
 	pause_panel.offset_left = -180; pause_panel.offset_right = 180
-	pause_panel.offset_top = -150; pause_panel.offset_bottom = 150
+	pause_panel.offset_top = -170; pause_panel.offset_bottom = 170
 	pause_panel.visible = false
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("102421f5")
-	style.border_color = Color("b4dec4")
-	style.set_border_width_all(1)
-	style.corner_radius_top_left = 14; style.corner_radius_top_right = 14
-	style.corner_radius_bottom_left = 14; style.corner_radius_bottom_right = 14
-	pause_panel.add_theme_stylebox_override("panel",style)
+	pause_panel.add_theme_stylebox_override("panel",_panel_style(PANEL_BG,PANEL_BORDER))
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation",10)
 	pause_panel.add_child(content)
@@ -219,12 +264,119 @@ func _build_pause_menu() -> void:
 	content.add_child(label_for("Settings & level options",14))
 	button_for("Resume",_toggle_pause,content)
 	button_for("Replay level",func(): _toggle_pause(); _reset(),content)
-	button_for("Open level editor",func(): get_tree().change_scene_to_file("res://scenes/level_editor.tscn"),content)
+	if OS.is_debug_build():
+		button_for("Level select (debug)",_show_level_select,content)
 	button_for("Toggle fullscreen",func():
 		get_window().mode = Window.MODE_FULLSCREEN if get_window().mode != Window.MODE_FULLSCREEN else Window.MODE_WINDOWED
 	,content)
 	button_for("Quit game",func(): get_tree().quit(),content)
 	add_child(pause_panel)
+
+## Debug-only jump list: every level in the library plus every story scene.
+func _build_level_select() -> void:
+	level_select_panel = PanelContainer.new()
+	level_select_panel.set_anchors_preset(Control.PRESET_CENTER)
+	level_select_panel.offset_left = -300; level_select_panel.offset_right = 300
+	level_select_panel.offset_top = -280; level_select_panel.offset_bottom = 280
+	level_select_panel.visible = false
+	level_select_panel.add_theme_stylebox_override("panel",_panel_style(PANEL_BG,PANEL_BORDER))
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation",8)
+	level_select_panel.add_child(content)
+	content.add_child(label_for("LEVEL SELECT · DEBUG",20))
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	content.add_child(scroll)
+	level_select_list = VBoxContainer.new()
+	level_select_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	level_select_list.add_theme_constant_override("separation",6)
+	scroll.add_child(level_select_list)
+	button_for("Back · Esc",_hide_level_select,content)
+	add_child(level_select_panel)
+
+func _show_level_select() -> void:
+	for child in level_select_list.get_children(): child.queue_free()
+	level_select_list.add_child(label_for("Levels",14))
+	for i in range(library.size()):
+		var marker := "▶  " if i == picker.selected else "    "
+		button_for("%s%d · %s" % [marker,i+1,library[i].level.name],_jump_to_level.bind(i),level_select_list)
+	level_select_list.add_child(label_for("Story scenes",14))
+	for scene_id in dialogue.story.get("scenes",{}).keys():
+		button_for("    " + str(scene_id),_jump_to_scene.bind(str(scene_id)),level_select_list)
+	pause_panel.visible = false
+	level_select_panel.visible = true
+
+func _hide_level_select() -> void:
+	level_select_panel.visible = false
+	pause_panel.visible = is_paused
+
+func _jump_to_level(index: int) -> void:
+	level_select_panel.visible = false
+	if is_paused: _toggle_pause()
+	_select_level(index)
+
+func _jump_to_scene(scene_id: String) -> void:
+	level_select_panel.visible = false
+	if is_paused: _toggle_pause()
+	dialogue.play(scene_id)
+
+func _level_key(index: int) -> String:
+	if index < 0 or index >= library.size(): return ""
+	return str(library[index].path).get_file().get_basename()
+
+func _play_story_before(index: int) -> void:
+	var scene_id: String = dialogue.scene_for("before:" + _level_key(index))
+	if not scene_id.is_empty(): dialogue.play(scene_id)
+
+func _on_dialogue_finished() -> void:
+	_play_level_music(picker.selected)
+	var next := after_dialogue
+	after_dialogue = Callable()
+	if next.is_valid(): next.call()
+
+func _play_level_music(index: int) -> void:
+	# A level keeps the most recent track named at or before it in story/dialogue.json.
+	for i in range(mini(index,library.size()-1),-1,-1):
+		var key: String = dialogue.music_for_level(_level_key(i))
+		if not key.is_empty():
+			_play_bgm(key)
+			return
+
+func _play_bgm(key: String) -> void:
+	if key == current_bgm or not BGM.has(key) or bgm_player == null: return
+	current_bgm = key
+	var stream: AudioStream = load(BGM[key])
+	if stream == null: return
+	if "loop" in stream: stream.loop = true
+	if bgm_tween != null and bgm_tween.is_valid(): bgm_tween.kill()
+	bgm_tween = create_tween()
+	if bgm_player.playing: bgm_tween.tween_property(bgm_player,"volume_db",-40.0,0.6)
+	bgm_tween.tween_callback(func():
+		bgm_player.stream = stream
+		bgm_player.volume_db = -40.0
+		bgm_player.play()
+	)
+	bgm_tween.tween_property(bgm_player,"volume_db",BGM_VOLUME_DB,0.8)
+
+## The source SFX are long takes, so each one is faded out after `seconds`.
+func _play_sfx(key: String, seconds: float) -> void:
+	if not SFX.has(key): return
+	if not sfx_players.has(key):
+		var player := AudioStreamPlayer.new()
+		player.stream = load(SFX[key])
+		add_child(player)
+		sfx_players[key] = player
+	var player: AudioStreamPlayer = sfx_players[key]
+	if player.stream == null: return
+	if sfx_tweens.has(key) and sfx_tweens[key].is_valid(): sfx_tweens[key].kill()
+	player.volume_db = SFX_VOLUME_DB
+	player.play()
+	var fade := create_tween()
+	fade.tween_interval(seconds)
+	fade.tween_property(player,"volume_db",-40.0,0.35)
+	fade.tween_callback(player.stop)
+	sfx_tweens[key] = fade
 
 func _build_loss_popup() -> void:
 	loss_veil = ColorRect.new()
@@ -240,8 +392,8 @@ func _build_loss_popup() -> void:
 	loss_panel.visible = false
 	loss_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color("121c24f2")
-	style.border_color = Color("7a3a3a")
+	style.bg_color = Color("1a1230f2")
+	style.border_color = Color("8a4a9a")
 	style.set_border_width_all(1)
 	style.corner_radius_top_left = 16; style.corner_radius_top_right = 16
 	style.corner_radius_bottom_left = 16; style.corner_radius_bottom_right = 16
@@ -255,7 +407,7 @@ func _build_loss_popup() -> void:
 	loss_art = TutorialArt.new()
 	loss_art.custom_minimum_size = Vector2(420, 180)
 	content.add_child(loss_art)
-	loss_title = label_for("Your witch drowned",20)
+	loss_title = label_for("Swallowed by a crack in time",20)
 	loss_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	loss_title.add_theme_color_override("font_color",Color("f0c9c9"))
 	content.add_child(loss_title)
@@ -274,7 +426,7 @@ func _loss_was_river() -> bool:
 
 func _show_loss_popup() -> void:
 	var drowned := _loss_was_river()
-	loss_title.text = "Your witch drowned" if drowned else "Your witch fell into the void"
+	loss_title.text = "Swallowed by a crack in time" if drowned else "Lost in the void between times"
 	loss_art.setup("drowned" if drowned else "void", art)
 	loss_veil.visible = true
 	loss_panel.visible = true
@@ -314,10 +466,10 @@ func _flash_right_tile(x: int, y: int) -> void:
 
 func _handle_plant_blocked(reason: String) -> void:
 	if reason.contains("hết hạt"):
-		_toast("Out of seeds. Pick one up to plant.")
+		_toast("No cubes left. Press Space on a cube to take it back.")
 		return
 	if reason.contains("đang đứng") or reason.contains("cùng tọa độ"):
-		_toast("Cannot plant while both witches share the same tile.")
+		_toast("You are standing where the cube would appear.")
 		return
 	var p: Array = state.p[0]
 	var x := int(p[0])
@@ -347,9 +499,13 @@ func _load_library() -> void:
 
 func _select_level(index: int) -> void:
 	if index < 0 or index >= library.size(): return
+	# A direct jump (debug select, import, tests) abandons any story scene in progress.
+	after_dialogue = Callable()
+	if dialogue != null: dialogue.stop()
 	picker.select(index)
 	engine = EngineScript.new(library[index].level)
 	_reset()
+	_play_level_music(index)
 
 func _import_file(path: String) -> void:
 	var parsed := Loader.read(path)
@@ -378,7 +534,7 @@ func _reset() -> void:
 	_render()
 
 func _act(action: int) -> void:
-	if engine == null or is_transitioning or is_paused or engine.won(state) or engine.lost(state): return
+	if engine == null or is_transitioning or is_paused or dialogue.is_playing() or engine.won(state) or engine.lost(state): return
 	if action == 4:
 		var reason: String = engine.plant_reason(state)
 		if not reason.is_empty():
@@ -392,14 +548,21 @@ func _act(action: int) -> void:
 	if action < 4:
 		for i in range(2):
 			if next.p[i] == state.p[i]: boards[i].bump()
+	if action == 4:
+		var p: Array = state.p[0]
+		var summoned: bool = next.trees.size() > state.trees.size()
+		if summoned and engine.tile(1,p[0],p[1]) == "W": _play_sfx("seal",1.4)
+		else: _play_sfx("cube",0.9 if summoned else 0.45)
 	history.append(state.duplicate(true))
 	state = next
 	_render()
 	if engine.lost(state): _show_loss_popup()
-	elif engine.won(state): _begin_book_transition()
+	elif engine.won(state):
+		_play_sfx("win",2.6)
+		_begin_book_transition()
 
 func _undo() -> void:
-	if is_transitioning or is_paused or history.is_empty(): return
+	if is_transitioning or is_paused or dialogue.is_playing() or history.is_empty(): return
 	_hide_loss_popup()
 	state = history.pop_back()
 	_render()
@@ -435,9 +598,11 @@ func _begin_book_transition() -> void:
 
 func _translation_copy() -> Dictionary:
 	var fallback := [
-		{"title":"Two hands, one sentence","body":"A spell survives only when two worlds read it together. Seeds placed in the past reshape the future.","illustration":""},
-		{"title":"The future can be held","body":"A living tree may become a boundary, a bridge, or the hand that keeps an old mechanism awake.","illustration":""},
-		{"title":"Water remembers","body":"A seed cast into a future river becomes a lily. Step lightly: unmarked water still takes a witch beneath it.","illustration":""},
+		{"title":"Two hands, one sentence","body":"A spell survives only when two times read it together. What is set down in the past is still standing in the present.","illustration":""},
+		{"title":"The weight of a cube","body":"A summoned cube may become a wall, a key, or the hand that keeps an old mechanism pressed and awake.","illustration":""},
+		{"title":"Stitching the rift","body":"A crack in the present can be sealed by a cube left there in the past. Step lightly: an open crack still takes whoever walks into it.","illustration":""},
+		{"title":"Written in Niran","body":"This page was copied by a Niran hand three hundred years ago. It has not been read aloud in Nira since the ships came.","illustration":""},
+		{"title":"Those who would forget","body":"An empire that takes a people's books does not need to burn them. It only needs someone at home to agree that they were dangerous.","illustration":""},
 		{"title":"The archive opens","body":"Every translated page returns one lost fragment of magic to the people who first wrote it.","illustration":""}
 	]
 	var custom: Variant = engine.level.get("translation",{})
@@ -484,6 +649,10 @@ func _continue_after_translation() -> void:
 	is_translating = false
 	translation_panel.visible = false
 	transition_overlay.visible = true
+	var after_scene: String = dialogue.scene_for("after:" + _level_key(picker.selected))
+	if not after_scene.is_empty() and dialogue.play(after_scene):
+		after_dialogue = _swap_to_next_level
+		return
 	_swap_to_next_level()
 
 func _swap_to_next_level() -> void:
@@ -497,12 +666,14 @@ func _swap_to_next_level() -> void:
 	state = engine.initial()
 	history.clear()
 	_render()
+	_play_level_music(next_index)
 	_set_transition_veil(_book_origin(0),1.65,1.0)
 	var incoming := create_tween()
 	incoming.tween_method(func(value: float): _set_transition_veil(_book_origin(0),value,1.0),0.0,1.65,0.75).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	incoming.tween_callback(func():
 		transition_overlay.visible = false
 		is_transitioning = false
+		_play_story_before(next_index)
 	)
 
 func _render() -> void:
@@ -527,6 +698,12 @@ func _fit_boards() -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo or file_dialog.visible: return
+	if dialogue.is_playing(): return
+	if level_select_panel.visible:
+		if event.keycode == KEY_ESCAPE:
+			_hide_level_select()
+			get_viewport().set_input_as_handled()
+		return
 	if is_translating:
 		if translation_next.visible and event.keycode in [KEY_SPACE, KEY_RIGHT]:
 			_continue_after_translation()

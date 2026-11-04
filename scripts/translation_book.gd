@@ -81,8 +81,24 @@ func _ensure_layout() -> void:
 	var body_rect := Rect2(left.position.x, body_top, left.size.x, left.end.y - body_top)
 	_layout_text_block(page_body, body_rect, false, 13.0, 18.0)
 
+func _book_texture() -> Texture2D:
+	return art.get("open_book_texture") if art != null else null
+
 func _page_metrics(area: Vector2, open_override: float = -1.0) -> Dictionary:
 	var open := open_amount if open_override < 0.0 else open_override
+	var tex := _book_texture()
+	if tex != null:
+		# Painted book: fit its aspect, then place text/art inside the two painted pages.
+		var aspect := tex.get_width() / float(tex.get_height())
+		var w := minf(area.x * 0.96, area.y * 0.98 * aspect) * (0.80 + open * 0.20)
+		var h := w / aspect
+		var book := Rect2(Vector2(area.x * 0.5, area.y * 0.52) - Vector2(w, h) * 0.5, Vector2(w, h))
+		return {
+			"center": book.get_center(), "half": w * 0.5, "top": book.position.y, "bottom": book.end.y,
+			"spine": book.get_center().x, "book": book,
+			"left_text": Rect2(book.position + Vector2(w * 0.07, h * 0.15), Vector2(w * 0.38, h * 0.66)),
+			"right_art": Rect2(book.position + Vector2(w * 0.55, h * 0.16), Vector2(w * 0.38, h * 0.62))
+		}
 	var center := Vector2(area.x * 0.5, area.y * 0.54)
 	var width := minf(area.x * 0.92, 980.0) * (0.78 + open * 0.22)
 	var height := minf(area.y * 0.78, 470.0) * (0.85 + open * 0.15)
@@ -157,6 +173,14 @@ func _draw() -> void:
 	var top: float = m.top
 	var bottom: float = m.bottom
 	var spine: float = m.spine
+	if m.has("book"):
+		draw_shadow_ellipse(Vector2(center.x, bottom + 6), Vector2(half * 0.9, 18), Color("0a0614", 0.5))
+		draw_texture_rect(_book_texture(), m.book, false)
+		_draw_left_translation()
+		_draw_particles()
+		if image_reveal > 0.001 and not illustration.is_empty():
+			_draw_right_illustration(m.right_art)
+		return
 	draw_shadow_ellipse(Vector2(center.x, bottom + 20), Vector2(half * 0.82, 22), Color("120b10", 0.42))
 	var cover := Color("57372a")
 	draw_colored_polygon(PackedVector2Array([Vector2(spine - half, bottom - 9), Vector2(spine - half + 18, top + 25), Vector2(spine - 30, top + 10), Vector2(spine, bottom + 4)]), cover)
@@ -226,9 +250,9 @@ func _draw_right_illustration(rect: Rect2) -> void:
 	draw_rect(rect, Color("d9c48f", 0.35 * a), true)
 	draw_rect(rect, Color("8a6840", 0.45 * a), false, 1.6)
 	match illustration:
-		"river":
+		"rift", "river":
 			_illust_river(rect, a)
-		"seed":
+		"cube", "seed":
 			_illust_seed(rect, a)
 
 func _illust_tex(texture: Texture2D, rect: Rect2, tint: Color) -> void:
@@ -268,44 +292,44 @@ func _illust_river(rect: Rect2, a: float) -> void:
 	for i in range(5):
 		var feet := Vector2(rect.position.x + 24 + i * (rect.size.x - 40) / 4.0, rect.position.y + rect.size.y * 0.44)
 		_angry_villager(feet, 0.95 * a, i != 2)
-	# River body
-	var water := Rect2(rect.position.x, rect.position.y + rect.size.y * 0.48, rect.size.x, rect.size.y * 0.52)
-	draw_rect(water, Color("1a5563", 0.98 * a), true)
-	for i in range(6):
-		var y := water.position.y + 10 + i * 14.0
-		draw_line(Vector2(water.position.x + 6, y), Vector2(water.end.x - 6, y + sin(i * 1.7) * 3.0), Color("7fd0c8", 0.28 * a), 1.4)
-	# Drowning witch — large, tilted, half submerged, arms implied by offset layers
-	var witch_size := Vector2(rect.size.x * 0.42, rect.size.y * 0.42)
-	var witch_pos := Vector2(rect.position.x + rect.size.x * 0.30, water.position.y + water.size.y * 0.05)
+	# The rift: a violet void opening under the hunters' feet.
+	var void_rect := Rect2(rect.position.x, rect.position.y + rect.size.y * 0.48, rect.size.x, rect.size.y * 0.52)
+	draw_rect(void_rect, Color("1a0f33", 0.98 * a), true)
+	if art != null and art.river_texture != null:
+		_illust_tex(art.river_texture, Rect2(void_rect.position + Vector2(void_rect.size.x * 0.1, -6), Vector2(void_rect.size.x * 0.8, void_rect.size.y * 0.9)), Color(1, 1, 1, 0.95 * a))
+	# Falling witch, fading as she slips out of time.
+	var witch_size := Vector2(rect.size.x * 0.30, rect.size.y * 0.34)
+	var witch_pos := Vector2(rect.position.x + rect.size.x * 0.35, void_rect.position.y + void_rect.size.y * 0.12)
 	if art != null and art.witch_past_texture != null:
-		_illust_tex(art.witch_past_texture, Rect2(witch_pos, witch_size), Color(0.55, 0.78, 1.0, 0.95 * a))
-		_illust_tex(art.witch_past_texture, Rect2(witch_pos + Vector2(10, witch_size.y * 0.28), witch_size * Vector2(0.92, 0.72)), Color(0.25, 0.45, 0.7, 0.55 * a))
-	# Splashes / bubbles
+		_illust_tex(art.witch_past_texture, Rect2(witch_pos, witch_size), Color(0.8, 0.65, 1.0, 0.85 * a))
 	for i in range(10):
-		var p := witch_pos + Vector2(witch_size.x * 0.35, witch_size.y * 0.2) + Vector2(cos(i * 0.9) * 34.0, sin(i * 1.3) * 12.0)
-		draw_circle(p, 2.0 + (i % 3), Color("e8fbff", (0.25 + (i % 3) * 0.1) * a))
-	draw_string(ThemeDB.fallback_font, Vector2(rect.position.x + 10, rect.end.y - 10), "Thrown to the river", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e8d7a4", 0.9 * a))
+		var p := witch_pos + Vector2(witch_size.x * 0.5, witch_size.y * 0.5) + Vector2(cos(i * 0.9) * 40.0, sin(i * 1.3) * 18.0)
+		draw_circle(p, 1.6 + (i % 3), Color("e2ccff", (0.25 + (i % 3) * 0.12) * a))
+	draw_string(ThemeDB.fallback_font, Vector2(rect.position.x + 10, rect.end.y - 10), "Cast into the crack", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e8d7a4", 0.9 * a))
 
 func _illust_seed(rect: Rect2, a: float) -> void:
-	draw_rect(rect, Color("18241f", 0.96 * a), true)
+	draw_rect(rect, Color("1a1430", 0.96 * a), true)
 	var mid := rect.position.x + rect.size.x * 0.5
-	draw_line(Vector2(mid, rect.position.y + 12), Vector2(mid, rect.end.y - 14), Color("3d5a4c", 0.75 * a), 2.0)
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(12, 18), "PAST", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("9ed6bd", 0.95 * a))
-	draw_string(ThemeDB.fallback_font, Vector2(mid + 14, rect.position.y + 18), "PRESENT", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("9ed6bd", 0.95 * a))
+	draw_line(Vector2(mid, rect.position.y + 12), Vector2(mid, rect.end.y - 14), Color("8a5cff", 0.75 * a), 2.0)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(12, 18), "PAST", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("cbb6ff", 0.95 * a))
+	draw_string(ThemeDB.fallback_font, Vector2(mid + 14, rect.position.y + 18), "PRESENT", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("cbb6ff", 0.95 * a))
 	# Ground lines
-	draw_line(Vector2(rect.position.x + 12, rect.position.y + rect.size.y * 0.72), Vector2(mid - 12, rect.position.y + rect.size.y * 0.72), Color("4a6a55", 0.7 * a), 2.0)
-	draw_line(Vector2(mid + 12, rect.position.y + rect.size.y * 0.72), Vector2(rect.end.x - 12, rect.position.y + rect.size.y * 0.72), Color("4a6a55", 0.7 * a), 2.0)
+	draw_line(Vector2(rect.position.x + 12, rect.position.y + rect.size.y * 0.72), Vector2(mid - 12, rect.position.y + rect.size.y * 0.72), Color("5b4a8a", 0.7 * a), 2.0)
+	draw_line(Vector2(mid + 12, rect.position.y + rect.size.y * 0.72), Vector2(rect.end.x - 12, rect.position.y + rect.size.y * 0.72), Color("5b4a8a", 0.7 * a), 2.0)
 	if art != null:
 		_illust_tex(art.witch_past_texture, Rect2(rect.position + Vector2(18, 34), rect.size * Vector2(0.30, 0.34)), Color(1, 1, 1, a))
-		_illust_tex(art.seed_texture, Rect2(rect.position + Vector2(40, rect.size.y * 0.55), rect.size * Vector2(0.18, 0.18)), Color(1, 1, 1, a))
-		_illust_tex(art.tree_texture, Rect2(Vector2(mid + 22, rect.position.y + 28), rect.size * Vector2(0.32, 0.48)), Color(1, 1, 1, a))
-		_illust_tex(art.witch_future_texture, Rect2(Vector2(mid + 36, rect.position.y + rect.size.y * 0.52), rect.size * Vector2(0.26, 0.30)), Color(1, 1, 1, a))
+		var small := minf(rect.size.x, rect.size.y) * 0.12
+		_illust_tex(art.seed_texture, Rect2(Vector2(mid - small - 22, rect.position.y + rect.size.y * 0.72 - small), Vector2(small, small)), Color(1, 1, 1, a))
+		var cube := minf(rect.size.x * 0.24, rect.size.y * 0.34)
+		_illust_tex(art.tree_texture, Rect2(Vector2(mid + 18, rect.position.y + rect.size.y * 0.72 - cube), Vector2(cube, cube)), Color(1, 1, 1, a))
+		var ph := minf(rect.size.x * 0.22, rect.size.y * 0.40)
+		_illust_tex(art.witch_future_texture, Rect2(Vector2(rect.end.x - ph - 12, rect.position.y + rect.size.y * 0.72 - ph), Vector2(ph, ph)), Color(1, 1, 1, a))
 	var ay := rect.position.y + rect.size.y * 0.48
 	draw_line(Vector2(mid - 26, ay), Vector2(mid + 18, ay), Color("e6c984", 0.95 * a), 3.0)
 	draw_colored_polygon(PackedVector2Array([
 		Vector2(mid + 26, ay), Vector2(mid + 12, ay - 8), Vector2(mid + 12, ay + 8)
 	]), Color("e6c984", 0.95 * a))
-	draw_string(ThemeDB.fallback_font, Vector2(rect.position.x + 10, rect.end.y - 10), "Seed then → tree now", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e8d7a4", 0.9 * a))
+	draw_string(ThemeDB.fallback_font, Vector2(rect.position.x + 10, rect.end.y - 10), "Small cube then → big cube now", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e8d7a4", 0.9 * a))
 
 func _draw_glyph(pos: Vector2, index: int, alpha: float = 0.78) -> void:
 	var ink := Color("604433", alpha)

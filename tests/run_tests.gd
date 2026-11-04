@@ -81,7 +81,11 @@ func run() -> void:
 	await create_timer(1.0).timeout
 	check(game.is_translating and game.translation_panel.visible,"Winning did not open the translation book")
 	check(not game.translation_next.visible,"Translation button appeared before the text animation")
-	await create_timer(1.8).timeout
+	# Reveal length scales with the page text (up to ~9.5 s), so wait for it rather than a fixed delay.
+	var waited := 0.0
+	while not game.translation_next.visible and waited < 12.0:
+		await create_timer(0.25).timeout
+		waited += 0.25
 	check(game.translation_next.visible,"Translation did not finish revealing its page")
 	game._continue_after_translation()
 	await create_timer(1.0).timeout
@@ -96,7 +100,16 @@ func run() -> void:
 	game._import_file("res://missing.json")
 	check(game.state == old_state,"Invalid file changed current game")
 	game._import_file("res://levels/03-level.json")
-	check(game.engine.level.name == data.levels[2].name,"Actual JSON import failed")
+	check(game.engine.level.name == Loader.read("res://levels/03-level.json").level.name,"Actual JSON import failed")
+	# Story data must load and point every trigger at a real scene.
+	check(not game.dialogue.story.is_empty(),"Story dialogue failed to load")
+	for trigger in game.dialogue.story.get("triggers",{}):
+		check(game.dialogue.story.scenes.has(game.dialogue.scene_for(trigger)),"Story trigger points at a missing scene: "+trigger)
+	check(game.dialogue.play("commander") and game.dialogue.is_playing(),"Commander scene did not start")
+	var before_dialogue: Dictionary = game.state.duplicate(true)
+	game._act(1)
+	check(game.state == before_dialogue,"Movement continued during dialogue")
+	game.dialogue.stop()
 	var saved_path: String = game.library[-1].path
 	check(Loader.read(saved_path).has("level"),"Imported level did not persist")
 	DirAccess.remove_absolute(saved_path)

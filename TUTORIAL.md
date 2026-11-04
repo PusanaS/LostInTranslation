@@ -10,8 +10,9 @@ A mirrored copy may also exist under `D:\Eramus Game\Lost in translation\godot`.
 | --- | --- |
 | `project.godot` | Godot 4.7 project; press **F5** here |
 | `scenes/main.tscn` | Play scene |
-| `scenes/level_editor.tscn` | In-engine level editor |
-| `scripts/main.gd` | HUD, input, win/loss flow, translation screen |
+| `scripts/main.gd` | HUD, input, win/loss flow, translation screen, music/SFX, debug level select |
+| `scripts/dialogue_view.gd` | Story dialogue overlay (portraits + textbox) |
+| `story/dialogue.json` | All story text, scene triggers and per-level music |
 | `scripts/puzzle_engine.gd` | Deterministic rules (parity with web `engine.js`) |
 | `scripts/board_view.gd` | Board draw + red tile flash feedback |
 | `scripts/translation_book.gd` | Code-drawn book; left page glyphs **or** tutorial illustration |
@@ -45,7 +46,9 @@ Level JSON shape:
 }
 ```
 
-`illustration` values currently supported: `"river"`, `"seed"`, or `""` / omitted for glyphs only.
+`illustration` values currently supported: `"rift"` (alias `"river"`), `"cube"` (alias `"seed"`), or `""` / omitted for glyphs only.
+
+> Rift update: level 1's page is now **Cracks between worlds** (`rift`), level 2's is **Cubes across dimensions** (`cube`). The notes below describe the original river/seed wording.
 
 Book reveal pacing is **10% slower** than the original tween timings in `main.gd` → `_show_translation()`.
 

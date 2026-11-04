@@ -102,22 +102,18 @@ func _draw_seed_lesson() -> void:
 
 func _draw_drowned_loss() -> void:
 	var area := size
-	draw_rect(Rect2(Vector2.ZERO, area), Color("0d1a22", 0.98 * reveal), true)
-	draw_rect(Rect2(0, area.y * 0.28, area.x, area.y * 0.18), Color("2c3a2e", 0.9 * reveal), true)
-	for i in range(3):
-		_angry_villager(Vector2(36 + i * 54.0, area.y * 0.42), true)
-	draw_rect(Rect2(0, area.y * 0.45, area.x, area.y * 0.55), Color("163f4c", 0.98 * reveal), true)
-	for i in range(4):
-		var y := area.y * (0.55 + i * 0.1)
-		draw_line(Vector2(10, y), Vector2(area.x - 10, y), Color("6fb8b4", 0.25 * reveal), 1.3)
-	var witch := Rect2(area.x * 0.30, area.y * 0.42, area.x * 0.42, area.y * 0.46)
-	if art != null and art.witch_future_texture != null:
-		_tex(art.witch_future_texture, witch, Color(0.45, 0.7, 0.95, 0.9))
-		_tex(art.witch_future_texture, Rect2(witch.position + Vector2(8, 22), witch.size * 0.9), Color(0.25, 0.45, 0.7, 0.45))
+	# The player slipping into an open dimension crack.
+	draw_rect(Rect2(Vector2.ZERO, area), Color("120c24", 0.98 * reveal), true)
+	var crack := Rect2(area.x * 0.18, area.y * 0.38, area.x * 0.64, area.y * 0.60)
+	draw_circle(crack.get_center(), crack.size.y * 0.55, Color(0.55, 0.25, 1.0, 0.18 * reveal))
 	if art != null and art.river_texture != null:
-		_tex(art.river_texture, Rect2(0, area.y * 0.72, area.x, area.y * 0.28), Color(1, 1, 1, 0.55))
-	for i in range(8):
-		draw_circle(witch.get_center() + Vector2(-28 + i * 10.0, -16 + (i % 2) * 8.0), 2.4, Color("dff6ff", 0.4 * reveal))
+		_tex(art.river_texture, crack)
+	var h := area.y * 0.55
+	var player := Rect2(area.x * 0.5 - h * 0.5, area.y * 0.12, h, h)
+	if art != null and art.witch_future_texture != null:
+		_tex(art.witch_future_texture, player, Color(0.75, 0.6, 1.0, 0.7))
+	for i in range(12):
+		draw_circle(player.get_center() + Vector2(cos(i * 0.9) * 60.0, sin(i * 1.3) * 30.0 + 30.0), 1.6 + (i % 3), Color("e2ccff", (0.25 + (i % 3) * 0.12) * reveal))
 
 func _draw_void_loss() -> void:
 	var area := size

@@ -1,0 +1,101 @@
+{
+	"speakers": {
+		"east_witch": {"name": "The East Witch", "portrait": "res://assets/handmade/portraits/witch_east.png"},
+		"young_witch": {"name": "Young East Witch", "portrait": "res://assets/handmade/portraits/witch_child.png"},
+		"player": {"name": "You", "portrait": "res://assets/handmade/portraits/player.png", "side": "right"},
+		"commander": {"name": "Commander", "portrait": "res://assets/handmade/portraits/commander.png"},
+		"narrator": {"name": "", "portrait": ""}
+	},
+	"level_music": {
+		"01-level": "library",
+		"03-level": "main_city",
+		"05-level": "graveyard",
+		"07-level": "storm_chasing"
+	},
+	"triggers": {
+		"before:01-level": "intro",
+		"before:03-level": "the_hunt",
+		"before:05-level": "commander",
+		"before:07-level": "the_storm",
+		"after:08-level": "ending"
+	},
+	"scenes": {
+		"intro": {
+			"background": "bedroom",
+			"bgm": "player_room",
+			"lines": [
+				{"speaker": "narrator", "text": "Dratalia. The capital of an empire built on things it took."},
+				{"speaker": "narrator", "text": "Somewhere beneath the Imperial Archive lies a grimoire written in Niran — the magic of the East, carried home in Dratalian ships."},
+				{"speaker": "east_witch", "text": "You are the translator. The one who can still read the old Niran script."},
+				{"speaker": "player", "text": "...How did you get into my room?"},
+				{"speaker": "east_witch", "text": "Through a crack in time. Dimension Magic is the only magic Nira has left — and I am the last witch who can use it."},
+				{"speaker": "east_witch", "text": "Your country stole our knowledge. Mine burned what was left, so no one would remember it. I want it returned. To the people of Nira. In their own language."},
+				{"speaker": "player", "text": "Then use your magic. Why come to me?"},
+				{"speaker": "east_witch", "text": "Because Dratalia sealed my power long ago. Today, I can no longer open the rift wide enough to carry a single page."},
+				{"speaker": "east_witch", "text": "But when I was a child, my magic was untouched. Take this — an hourglass cut from the rift itself."},
+				{"speaker": "narrator", "text": "The East Witch places a cold, violet hourglass in your hands. It hums like a held breath."},
+				{"speaker": "east_witch", "text": "It reaches back in time — to me, when I was little. Her magic opens the way. Your words bring the meaning home."},
+				{"speaker": "player", "text": "And if I refuse?"},
+				{"speaker": "east_witch", "text": "Then the book stays in a vault, and Nira forgets it ever had a voice."},
+				{"speaker": "narrator", "text": "You turn the hourglass over. Through the glass, the same streets appear — years younger.", "background": "rift", "bgm": "library"},
+				{"speaker": "young_witch", "text": "...Who are you? Why is there a lady inside my hourglass? You smell like Dratalian ink."},
+				{"speaker": "player", "text": "I'm calling from your future. I am here to give something back — your people's book. I need your magic to reach it."},
+				{"speaker": "young_witch", "text": "My magic? Grown-ups say it's dangerous. They say I should forget it."},
+				{"speaker": "player", "text": "Then let's prove them wrong together. You walk through the past, I walk through the present."},
+				{"speaker": "young_witch", "text": "Fine. But if I set a cube down here, it stays there for years — and by your time it's grown big with magic. Don't trip over it."},
+				{"speaker": "narrator", "text": "Arrow keys move you both — her in the past, you in the present. Space summons or takes back a cube. Z to undo, R to restart. Reach the book together."}
+			]
+		},
+		"the_hunt": {
+			"background": "rift",
+			"lines": [
+				{"speaker": "young_witch", "text": "The pages you translated... they talk about my grandmother's spells. I never knew they were written down."},
+				{"speaker": "player", "text": "They were. Then they were shipped to Dratalia and stamped 'Imperial Property'."},
+				{"speaker": "young_witch", "text": "Imperial soldiers came to the village this morning. They were asking about a witch with a book."},
+				{"speaker": "player", "text": "Then stay hidden in your time, and I'll keep moving in mine. Mind the cracks in the present — a cube you leave in the past can seal them shut."}
+			]
+		},
+		"commander": {
+			"background": "rift_guards",
+			"flip": ["commander"],
+			"bgm": "graveyard",
+			"lines": [
+				{"speaker": "commander", "text": "That is far enough, Dratalian."},
+				{"speaker": "young_witch", "text": "(through the hourglass) ...Who is that? He wears the uniform of Nira. Is he one of ours?"},
+				{"speaker": "commander", "text": "I am the Commander of the Niran Guard. And you are carrying something that does not belong to you."},
+				{"speaker": "player", "text": "It belongs to Nira. That is exactly where I am taking it."},
+				{"speaker": "commander", "text": "Listen to me. We already gave the magic to the ones who can protect it. Dratalia keeps it safe — far from careless hands."},
+				{"speaker": "commander", "text": "Please. Do not bring that doom back."},
+				{"speaker": "young_witch", "text": "Doom? It's our grandmothers' words. How can words be doom?"},
+				{"speaker": "commander", "text": "...A child's voice, inside that glass. So the old witch really did reach into the past."},
+				{"speaker": "commander", "text": "Then hear this, little one: words make people think. People who think start to ask questions. Nira is quiet now. Peaceful. Let it stay that way."},
+				{"speaker": "player", "text": "Quiet because the people who could read were taken away."},
+				{"speaker": "player", "text": "That star on your chest — it carries the mint mark of the Dratalian treasury. They didn't give you a medal. They paid you."},
+				{"speaker": "commander", "text": "...You understand nothing of how a small country survives."},
+				{"speaker": "commander", "text": "Guards. Take the book. And break that hourglass."},
+				{"speaker": "young_witch", "text": "Not today! Hold on tight — I'll change the road behind you, here in the past!"}
+			]
+		},
+		"the_storm": {
+			"background": "rift",
+			"bgm": "storm_chasing",
+			"lines": [
+				{"speaker": "narrator", "text": "In the past, the sky over the strait turns the colour of a bruise."},
+				{"speaker": "young_witch", "text": "Imperial soldiers behind me. Pirates on the water — they want the book for its price, not its words. And a storm coming in."},
+				{"speaker": "player", "text": "And the Commander's guards behind me, here in the present. It feels like the whole world wants us lost."},
+				{"speaker": "young_witch", "text": "Then we don't get lost. You read. I open the way. Keep going."}
+			]
+		},
+		"ending": {
+			"background": "bedroom",
+			"bgm": "player_room",
+			"lines": [
+				{"speaker": "narrator", "text": "The hourglass runs out. The past falls quiet — and in the present, the grimoire is no longer in the vault."},
+				{"speaker": "east_witch", "text": "You did it. Every page, in Niran again."},
+				{"speaker": "player", "text": "You did it — the little you. I only found the words."},
+				{"speaker": "east_witch", "text": "That was always the hard part. Magic can be stolen. Meaning has to be given back."},
+				{"speaker": "narrator", "text": "In a small school in Nira, a child opens a book and, for the first time in a generation, reads it aloud."}
+			]
+		}
+	}
+}

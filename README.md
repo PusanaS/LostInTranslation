@@ -1,5 +1,26 @@
 # Lost in Translation — Godot
 
+## Dimensional Rift update (English)
+
+**Story.** You are a Dratalian translator. The East Witch — the last witch who can use Dimension Magic — gives you a rift hourglass to travel back in time and work with her child self. Her magic opens the way; your translations return Nira's stolen grimoire in its own language. Nira's Commander (secretly paid by Dratalia), imperial soldiers, pirates and a storm all try to stop you.
+
+**Mechanics (rules unchanged, only the theme):**
+
+| Old | Now | Art |
+| --- | --- | --- |
+| Seed (left room = the past) | Small cube the child witch summons | `assets/handmade/objects/cube_small.png` |
+| Tree (right room = the present) | The same cube years later, grown large | `cube_large.png` |
+| River `W` | Open crack in time — walking in loses | `assets/handmade/tiles/rift_crack.png` |
+| Lily pad on river | Sealed crack — walkable | `rift_sealed.png` |
+
+The two rooms are the same place at two times: left = the past (young East Witch), right = the present (you, shown as the chess-piece sprite; the Commander also lives in the present). All handmade art and audio from `LIT_workfile` lives in `assets/handmade/` and is wired through `art/game_art.tres` / `scripts/game_art.gd`. Sprites were cut out of `IngameObject.png` and trimmed of transparent padding.
+
+**Story dialogue** lives in `story/dialogue.json`: speakers (name, portrait, side), scenes (lines, background `bedroom` / `rift` / `rift_guards`, optional `bgm` and `flip`), `triggers` (`before:<level-file>` / `after:<level-file>`) and `level_music`. Edit text there — no code changes needed. In a scene: Space/click/→ advances, Esc skips.
+
+**Debug level select** replaces the level editor: Pause → *Level select (debug)* (debug builds only) jumps to any level or replays any story scene.
+
+**Screenshots:** `godot --path . --script res://tests/capture_shots.gd` saves key screens to `user://shots/`.
+
 Dự án Godot độc lập, chuyển logic từ bản web v1.1.7. Đã kiểm tra trên Godot **4.7.2 Standard**, dùng GDScript, không cần C# hay addon.
 
 ## Chạy game
@@ -19,9 +40,9 @@ Mũi tên điều khiển cả hai nhân vật; Space gieo/nhặt; Z hoàn tác;
 
 File lỗi sẽ hiện thông báo và giữ level đang chơi. Hỗ trợ JSON v1/v2/v3, `rules` riêng cho mỗi phòng, trường `rule` cũ, `seedLimit` hữu hạn hoặc `null`/thiếu để giữ chế độ vô hạn cũ. Không nhập cả thư viện nhiều màn trong một file: mỗi JSON chứa một level đúng như nút Xuất JSON của editor.
 
-## Sửa level trong Godot
+## Sửa level
 
-Từ game, nhấn **Level editor**. Scene này có hai map cạnh nhau và dùng cùng định dạng JSON với web editor: đặt witch, book, wall, ice, door, plate và river; chọn kích thước/rule cho từng phòng, giới hạn seed và mã cặp cửa–cơ quan. **Save JSON** tạo file mở được ở cả web editor lẫn game Godot. **Open JSON** đọc file cũ; hố đen cũ vẫn được hiển thị để không mất dữ liệu, nhưng editor không còn công cụ để tạo thêm hố.
+Level editor trong Godot đã được gỡ bỏ (thay bằng *Level select (debug)* trong menu Pause). Thiết kế level bằng web editor.
 
 Để đóng gói level đi cùng game, chép file vào `levels/`, rồi chạy lại. Tên file được sắp xếp alphabet; dùng tiền tố `01-`, `02-` để chọn thứ tự. Có sẵn 7 màn mẫu. Dự án này là game chơi level; việc vẽ level tiếp tục thực hiện ở web editor.
 
