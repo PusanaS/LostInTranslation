@@ -13,6 +13,8 @@ const CHARS_PER_SECOND := 48.0
 const BACKGROUNDS := {
 	"bedroom": "res://assets/handmade/backgrounds/bedroom.png",
 }
+## Hand-painted crack across the rift sky (a full 1920×1080 layer).
+const RIFT_CRACK := "res://assets/handmade/backgrounds/rift_crack_wide.png"
 
 var art: Resource
 var story: Dictionary = {}
@@ -178,16 +180,14 @@ func _draw_rift_backdrop(rect: Rect2) -> void:
 	for i in range(14):
 		var t := float(i) / 13.0
 		draw_rect(Rect2(0, rect.size.y * t, rect.size.x, rect.size.y / 13.0 + 1.0), Color(0.18 + 0.12 * t, 0.07, 0.30 + 0.10 * t, 0.35), true)
-	# A slow-breathing crack across the sky.
-	var pts := PackedVector2Array()
-	for i in range(13):
-		var x := rect.size.x * (0.05 + 0.075 * i)
-		var y := rect.size.y * (0.22 + 0.05 * sin(i * 1.7)) + (16.0 if i % 2 == 0 else -14.0)
-		pts.append(Vector2(x, y))
-	var glow := 0.55 + 0.25 * sin(_time * 1.6)
-	draw_polyline(pts, Color(0.62, 0.35, 1.0, 0.25 * glow), 22.0, true)
-	draw_polyline(pts, Color(0.78, 0.55, 1.0, 0.65 * glow), 6.0, true)
-	draw_polyline(pts, Color(0.95, 0.88, 1.0, 0.9), 1.6, true)
+	# A slow-breathing crack across the sky: a soft glow pass behind the painted crack.
+	var crack := _texture(RIFT_CRACK)
+	if crack != null:
+		var glow := 0.55 + 0.25 * sin(_time * 1.6)
+		draw_set_transform_matrix(_design_transform())
+		draw_texture_rect(crack, Rect2(Vector2(-8, -6), DESIGN_SIZE + Vector2(16, 12)), false, Color(0.8, 0.6, 1.0, 0.35 * glow))
+		draw_texture_rect(crack, Rect2(Vector2.ZERO, DESIGN_SIZE), false, Color(1, 1, 1, 0.75 + 0.25 * glow))
+		draw_set_transform_matrix(Transform2D.IDENTITY)
 	for i in range(40):
 		var p := Vector2(fmod(i * 197.0 + _time * 9.0 * (1 + i % 3), rect.size.x), fmod(i * 113.0, rect.size.y))
 		draw_circle(p, 1.0 + (i % 3) * 0.6, Color(0.85, 0.75, 1.0, 0.25 + 0.2 * sin(_time * 2.0 + i)))
