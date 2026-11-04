@@ -4,26 +4,7 @@ const Loader = preload("res://scripts/level_loader.gd")
 const Board = preload("res://scripts/board_view.gd")
 const TranslationBook = preload("res://scripts/translation_book.gd")
 const TutorialArt = preload("res://scripts/tutorial_art.gd")
-const DialogueView = preload("res://scripts/dialogue_view.gd")
-const BGM := {
-	"player_room": "res://assets/handmade/audio/bgm/player_room.mp3",
-	"main_city": "res://assets/handmade/audio/bgm/main_city.mp3",
-	"library": "res://assets/handmade/audio/bgm/library.mp3",
-	"graveyard": "res://assets/handmade/audio/bgm/graveyard.mp3",
-	"storm_chasing": "res://assets/handmade/audio/bgm/storm_chasing.mp3",
-}
-const SFX := {
-	"cube": "res://assets/handmade/audio/sfx/magic_gun.wav",
-	"seal": "res://assets/handmade/audio/sfx/barrier.wav",
-	"win": "res://assets/handmade/audio/sfx/ultimate_burst.wav",
-}
-const BGM_VOLUME_DB := -12.0
-const SFX_VOLUME_DB := -6.0
-# Dimensional-rift palette shared by the HUD panels.
-const ROOM_BG := Color("15112a")
-const ROOM_BORDER := Color("4b3a8a")
-const PANEL_BG := Color("1b1436f5")
-const PANEL_BORDER := Color("b79cff")
+const StarField = preload("res://scripts/star_field.gd")
 @export var art: Resource
 var engine: RefCounted
 var state: Dictionary
@@ -39,6 +20,8 @@ var next_button: Button
 var replay_button: Button
 var pause_button: Button
 var seed_hud: Label
+var seed_frame: PanelContainer
+var seed_flash_tween: Tween
 var file_dialog: FileDialog
 var toast: PanelContainer
 var toast_label: Label
@@ -61,24 +44,14 @@ var translation_full_text := ""
 var is_translating := false
 var board_hosts: Array = []
 var seed_icon: TextureRect
-var dialogue: Control
-var after_dialogue := Callable() # what to run when the current story scene ends
-var level_select_panel: PanelContainer
-var level_select_list: VBoxContainer
-var bgm_player: AudioStreamPlayer
-var bgm_tween: Tween
-var current_bgm := ""
-var sfx_players: Dictionary = {}
-var sfx_tweens: Dictionary = {}
+var fx_layer: Control
 
 func _ready() -> void:
 	_build_ui()
 	resized.connect(_fit_boards)
 	_load_library()
 	get_window().files_dropped.connect(_files_dropped)
-	if not library.is_empty():
-		_select_level(0)
-		_play_story_before(0)
+	if not library.is_empty(): _select_level(0)
 
 func label_for(text: String, font_size: int = 16) -> Label:
 	var label := Label.new()
@@ -95,7 +68,34 @@ func button_for(text: String, callback: Callable, parent: Node) -> Button:
 	parent.add_child(button)
 	return button
 
+func _icon_button(icon_text: String, callback: Callable, parent: Node, tip: String) -> Button:
+	var button := Button.new()
+	button.text = icon_text
+	button.custom_minimum_size = Vector2(56, 56)
+	button.focus_mode = Control.FOCUS_NONE
+	button.tooltip_text = tip
+	button.add_theme_font_size_override("font_size", 28)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("13232cf0")
+	style.border_color = Color("3d6578")
+	style.set_border_width_all(1)
+	style.corner_radius_top_left = 12; style.corner_radius_top_right = 12
+	style.corner_radius_bottom_left = 12; style.corner_radius_bottom_right = 12
+	button.add_theme_stylebox_override("normal", style)
+	var hover := style.duplicate()
+	hover.bg_color = Color("1a3542f0")
+	hover.border_color = Color("7ec8c4")
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", hover)
+	button.pressed.connect(callback)
+	parent.add_child(button)
+	return button
+
 func _build_ui() -> void:
+	# Starfield sits behind boards / HUD.
+	var stars := StarField.new()
+	add_child(stars)
+	move_child(stars, 0)
 	# Dev-only controls remain alive for JSON import/tests, but the play HUD stays clean.
 	picker = OptionButton.new(); picker.visible = false; picker.item_selected.connect(_select_level); add_child(picker)
 	title_label = label_for(""); title_label.visible = false; add_child(title_label)
@@ -106,7 +106,7 @@ func _build_ui() -> void:
 	var rooms := HBoxContainer.new()
 	rooms.set_anchors_preset(Control.PRESET_FULL_RECT)
 	rooms.offset_left = 28; rooms.offset_right = -28
-	rooms.offset_top = 82; rooms.offset_bottom = -28
+	rooms.offset_top = 88; rooms.offset_bottom = -28
 	rooms.add_theme_constant_override("separation",10)
 	add_child(rooms)
 	for _i in range(2):
@@ -114,8 +114,8 @@ func _build_ui() -> void:
 		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		var panel_style := StyleBoxFlat.new()
-		panel_style.bg_color = ROOM_BG
-		panel_style.border_color = ROOM_BORDER
+		panel_style.bg_color = Color("101b25cc")
+		panel_style.border_color = Color("29485b")
 		panel_style.set_border_width_all(1)
 		panel_style.corner_radius_top_left = 12; panel_style.corner_radius_top_right = 12
 		panel_style.corner_radius_bottom_left = 12; panel_style.corner_radius_bottom_right = 12
@@ -129,19 +129,43 @@ func _build_ui() -> void:
 		board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		host.add_child(board)
 		boards.append(board); board_hosts.append(host)
+	fx_layer = Control.new()
+	fx_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	fx_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(fx_layer)
 	var hud := HBoxContainer.new()
 	hud.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	hud.offset_left = 28; hud.offset_right = -28
-	hud.offset_top = 22; hud.offset_bottom = 66
+	hud.offset_top = 16; hud.offset_bottom = 76
+	hud.add_theme_constant_override("separation", 12)
 	add_child(hud)
-	replay_button = button_for("↻  Replay",_reset,hud)
-	replay_button.tooltip_text = "Replay level · R"
-	pause_button = button_for("Ⅱ  Pause",_toggle_pause,hud)
-	pause_button.tooltip_text = "Pause · Esc"
+	replay_button = _icon_button("↻", _reset, hud, "Replay · R")
+	pause_button = _icon_button("⏸", _toggle_pause, hud, "Pause · Esc")
 	var spacer := Control.new(); spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL; hud.add_child(spacer)
-	var seeds := HBoxContainer.new(); seeds.add_theme_constant_override("separation",7); hud.add_child(seeds)
-	seed_icon = TextureRect.new(); seed_icon.texture = art.seed_texture; seed_icon.custom_minimum_size = Vector2(28,28); seed_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; seed_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; seeds.add_child(seed_icon)
-	seed_hud = label_for("0",22); seed_hud.vertical_alignment = VERTICAL_ALIGNMENT_CENTER; seeds.add_child(seed_hud)
+	seed_frame = PanelContainer.new()
+	seed_frame.pivot_offset = Vector2(54, 28)
+	var seed_style := StyleBoxFlat.new()
+	seed_style.bg_color = Color("152820f2")
+	seed_style.border_color = Color("d6b56a")
+	seed_style.set_border_width_all(2)
+	seed_style.corner_radius_top_left = 14; seed_style.corner_radius_top_right = 14
+	seed_style.corner_radius_bottom_left = 14; seed_style.corner_radius_bottom_right = 14
+	seed_style.content_margin_left = 14; seed_style.content_margin_right = 16
+	seed_style.content_margin_top = 8; seed_style.content_margin_bottom = 8
+	seed_frame.add_theme_stylebox_override("panel", seed_style)
+	hud.add_child(seed_frame)
+	var seeds := HBoxContainer.new(); seeds.add_theme_constant_override("separation",10)
+	seed_frame.add_child(seeds)
+	seed_icon = TextureRect.new()
+	seed_icon.texture = art.seed_texture if art != null else null
+	seed_icon.custom_minimum_size = Vector2(40,40)
+	seed_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	seed_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	seeds.add_child(seed_icon)
+	seed_hud = label_for("0", 28)
+	seed_hud.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	seed_hud.add_theme_color_override("font_color", Color("f3e7c0"))
+	seeds.add_child(seed_hud)
 	file_dialog = FileDialog.new()
 	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -152,27 +176,7 @@ func _build_ui() -> void:
 	_build_transition_overlay()
 	_build_translation_screen()
 	_build_pause_menu()
-	_build_level_select()
 	_build_loss_popup()
-	dialogue = DialogueView.new()
-	dialogue.art = art
-	dialogue.finished.connect(_on_dialogue_finished)
-	dialogue.music_requested.connect(_play_bgm)
-	add_child(dialogue)
-	bgm_player = AudioStreamPlayer.new()
-	bgm_player.volume_db = BGM_VOLUME_DB
-	add_child(bgm_player)
-
-func _panel_style(bg: Color, border: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = bg
-	style.border_color = border
-	style.set_border_width_all(1)
-	style.corner_radius_top_left = 14; style.corner_radius_top_right = 14
-	style.corner_radius_bottom_left = 14; style.corner_radius_bottom_right = 14
-	style.content_margin_left = 16; style.content_margin_right = 16
-	style.content_margin_top = 12; style.content_margin_bottom = 12
-	return style
 
 func _build_toast() -> void:
 	toast = PanelContainer.new()
@@ -184,8 +188,8 @@ func _build_toast() -> void:
 	toast.offset_bottom = -18
 	toast.modulate.a = 0.0
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color("231a44e8")
-	style.border_color = PANEL_BORDER
+	style.bg_color = Color("183735e8")
+	style.border_color = Color("9ed6bd")
 	style.set_border_width_all(1)
 	style.corner_radius_top_left = 10
 	style.corner_radius_top_right = 10
@@ -240,11 +244,33 @@ func _build_translation_screen() -> void:
 	translation_body.visible = false
 	translation_panel.add_child(translation_body)
 	translation_next = Button.new()
-	translation_next.text = "Space / →  Turn the page"
+	translation_next.text = "Next page"
 	translation_next.focus_mode = Control.FOCUS_ALL
 	translation_next.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	translation_next.offset_left = -110; translation_next.offset_right = 110
-	translation_next.offset_top = -66; translation_next.offset_bottom = -22
+	translation_next.offset_left = -120; translation_next.offset_right = 120
+	translation_next.offset_top = -70; translation_next.offset_bottom = -20
+	translation_next.custom_minimum_size = Vector2(240, 48)
+	translation_next.add_theme_font_size_override("font_size", 18)
+	translation_next.add_theme_color_override("font_color", Color("f3e7c0"))
+	translation_next.add_theme_color_override("font_hover_color", Color("fff6d8"))
+	translation_next.add_theme_color_override("font_pressed_color", Color("e6c984"))
+	var next_normal := StyleBoxFlat.new()
+	next_normal.bg_color = Color("2a1c14f2")
+	next_normal.border_color = Color("d6b56a")
+	next_normal.set_border_width_all(2)
+	next_normal.corner_radius_top_left = 10; next_normal.corner_radius_top_right = 10
+	next_normal.corner_radius_bottom_left = 10; next_normal.corner_radius_bottom_right = 10
+	next_normal.content_margin_left = 18; next_normal.content_margin_right = 18
+	next_normal.content_margin_top = 10; next_normal.content_margin_bottom = 10
+	var next_hover := next_normal.duplicate()
+	next_hover.bg_color = Color("3a2818f5")
+	next_hover.border_color = Color("f0d78a")
+	var next_pressed := next_normal.duplicate()
+	next_pressed.bg_color = Color("1c140ef5")
+	translation_next.add_theme_stylebox_override("normal", next_normal)
+	translation_next.add_theme_stylebox_override("hover", next_hover)
+	translation_next.add_theme_stylebox_override("pressed", next_pressed)
+	translation_next.add_theme_stylebox_override("focus", next_hover)
 	translation_next.visible = false
 	translation_next.pressed.connect(_continue_after_translation)
 	translation_panel.add_child(translation_next)
@@ -254,9 +280,15 @@ func _build_pause_menu() -> void:
 	pause_panel = PanelContainer.new()
 	pause_panel.set_anchors_preset(Control.PRESET_CENTER)
 	pause_panel.offset_left = -180; pause_panel.offset_right = 180
-	pause_panel.offset_top = -170; pause_panel.offset_bottom = 170
+	pause_panel.offset_top = -150; pause_panel.offset_bottom = 150
 	pause_panel.visible = false
-	pause_panel.add_theme_stylebox_override("panel",_panel_style(PANEL_BG,PANEL_BORDER))
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("102421f5")
+	style.border_color = Color("b4dec4")
+	style.set_border_width_all(1)
+	style.corner_radius_top_left = 14; style.corner_radius_top_right = 14
+	style.corner_radius_bottom_left = 14; style.corner_radius_bottom_right = 14
+	pause_panel.add_theme_stylebox_override("panel",style)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation",10)
 	pause_panel.add_child(content)
@@ -264,119 +296,12 @@ func _build_pause_menu() -> void:
 	content.add_child(label_for("Settings & level options",14))
 	button_for("Resume",_toggle_pause,content)
 	button_for("Replay level",func(): _toggle_pause(); _reset(),content)
-	if OS.is_debug_build():
-		button_for("Level select (debug)",_show_level_select,content)
+	button_for("Open level editor",func(): get_tree().change_scene_to_file("res://scenes/level_editor.tscn"),content)
 	button_for("Toggle fullscreen",func():
 		get_window().mode = Window.MODE_FULLSCREEN if get_window().mode != Window.MODE_FULLSCREEN else Window.MODE_WINDOWED
 	,content)
 	button_for("Quit game",func(): get_tree().quit(),content)
 	add_child(pause_panel)
-
-## Debug-only jump list: every level in the library plus every story scene.
-func _build_level_select() -> void:
-	level_select_panel = PanelContainer.new()
-	level_select_panel.set_anchors_preset(Control.PRESET_CENTER)
-	level_select_panel.offset_left = -300; level_select_panel.offset_right = 300
-	level_select_panel.offset_top = -280; level_select_panel.offset_bottom = 280
-	level_select_panel.visible = false
-	level_select_panel.add_theme_stylebox_override("panel",_panel_style(PANEL_BG,PANEL_BORDER))
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation",8)
-	level_select_panel.add_child(content)
-	content.add_child(label_for("LEVEL SELECT · DEBUG",20))
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	content.add_child(scroll)
-	level_select_list = VBoxContainer.new()
-	level_select_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	level_select_list.add_theme_constant_override("separation",6)
-	scroll.add_child(level_select_list)
-	button_for("Back · Esc",_hide_level_select,content)
-	add_child(level_select_panel)
-
-func _show_level_select() -> void:
-	for child in level_select_list.get_children(): child.queue_free()
-	level_select_list.add_child(label_for("Levels",14))
-	for i in range(library.size()):
-		var marker := "▶  " if i == picker.selected else "    "
-		button_for("%s%d · %s" % [marker,i+1,library[i].level.name],_jump_to_level.bind(i),level_select_list)
-	level_select_list.add_child(label_for("Story scenes",14))
-	for scene_id in dialogue.story.get("scenes",{}).keys():
-		button_for("    " + str(scene_id),_jump_to_scene.bind(str(scene_id)),level_select_list)
-	pause_panel.visible = false
-	level_select_panel.visible = true
-
-func _hide_level_select() -> void:
-	level_select_panel.visible = false
-	pause_panel.visible = is_paused
-
-func _jump_to_level(index: int) -> void:
-	level_select_panel.visible = false
-	if is_paused: _toggle_pause()
-	_select_level(index)
-
-func _jump_to_scene(scene_id: String) -> void:
-	level_select_panel.visible = false
-	if is_paused: _toggle_pause()
-	dialogue.play(scene_id)
-
-func _level_key(index: int) -> String:
-	if index < 0 or index >= library.size(): return ""
-	return str(library[index].path).get_file().get_basename()
-
-func _play_story_before(index: int) -> void:
-	var scene_id: String = dialogue.scene_for("before:" + _level_key(index))
-	if not scene_id.is_empty(): dialogue.play(scene_id)
-
-func _on_dialogue_finished() -> void:
-	_play_level_music(picker.selected)
-	var next := after_dialogue
-	after_dialogue = Callable()
-	if next.is_valid(): next.call()
-
-func _play_level_music(index: int) -> void:
-	# A level keeps the most recent track named at or before it in story/dialogue.json.
-	for i in range(mini(index,library.size()-1),-1,-1):
-		var key: String = dialogue.music_for_level(_level_key(i))
-		if not key.is_empty():
-			_play_bgm(key)
-			return
-
-func _play_bgm(key: String) -> void:
-	if key == current_bgm or not BGM.has(key) or bgm_player == null: return
-	current_bgm = key
-	var stream: AudioStream = load(BGM[key])
-	if stream == null: return
-	if "loop" in stream: stream.loop = true
-	if bgm_tween != null and bgm_tween.is_valid(): bgm_tween.kill()
-	bgm_tween = create_tween()
-	if bgm_player.playing: bgm_tween.tween_property(bgm_player,"volume_db",-40.0,0.6)
-	bgm_tween.tween_callback(func():
-		bgm_player.stream = stream
-		bgm_player.volume_db = -40.0
-		bgm_player.play()
-	)
-	bgm_tween.tween_property(bgm_player,"volume_db",BGM_VOLUME_DB,0.8)
-
-## The source SFX are long takes, so each one is faded out after `seconds`.
-func _play_sfx(key: String, seconds: float) -> void:
-	if not SFX.has(key): return
-	if not sfx_players.has(key):
-		var player := AudioStreamPlayer.new()
-		player.stream = load(SFX[key])
-		add_child(player)
-		sfx_players[key] = player
-	var player: AudioStreamPlayer = sfx_players[key]
-	if player.stream == null: return
-	if sfx_tweens.has(key) and sfx_tweens[key].is_valid(): sfx_tweens[key].kill()
-	player.volume_db = SFX_VOLUME_DB
-	player.play()
-	var fade := create_tween()
-	fade.tween_interval(seconds)
-	fade.tween_property(player,"volume_db",-40.0,0.35)
-	fade.tween_callback(player.stop)
-	sfx_tweens[key] = fade
 
 func _build_loss_popup() -> void:
 	loss_veil = ColorRect.new()
@@ -392,8 +317,8 @@ func _build_loss_popup() -> void:
 	loss_panel.visible = false
 	loss_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color("1a1230f2")
-	style.border_color = Color("8a4a9a")
+	style.bg_color = Color("121c24f2")
+	style.border_color = Color("7a3a3a")
 	style.set_border_width_all(1)
 	style.corner_radius_top_left = 16; style.corner_radius_top_right = 16
 	style.corner_radius_bottom_left = 16; style.corner_radius_bottom_right = 16
@@ -407,7 +332,7 @@ func _build_loss_popup() -> void:
 	loss_art = TutorialArt.new()
 	loss_art.custom_minimum_size = Vector2(420, 180)
 	content.add_child(loss_art)
-	loss_title = label_for("Swallowed by a crack in time",20)
+	loss_title = label_for("Your witch drowned",20)
 	loss_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	loss_title.add_theme_color_override("font_color",Color("f0c9c9"))
 	content.add_child(loss_title)
@@ -426,7 +351,7 @@ func _loss_was_river() -> bool:
 
 func _show_loss_popup() -> void:
 	var drowned := _loss_was_river()
-	loss_title.text = "Swallowed by a crack in time" if drowned else "Lost in the void between times"
+	loss_title.text = "Your witch drowned" if drowned else "Your witch fell into the void"
 	loss_art.setup("drowned" if drowned else "void", art)
 	loss_veil.visible = true
 	loss_panel.visible = true
@@ -464,12 +389,24 @@ func _flash_right_tile(x: int, y: int) -> void:
 	if boards.size() < 2: return
 	boards[1].flash_tile(x, y)
 
+func _flash_seed_hud() -> void:
+	if seed_frame == null: return
+	if seed_flash_tween != null and seed_flash_tween.is_valid(): seed_flash_tween.kill()
+	seed_frame.modulate = Color.WHITE
+	seed_hud.modulate = Color.WHITE
+	seed_flash_tween = create_tween()
+	for _i in range(2):
+		seed_flash_tween.tween_property(seed_frame, "modulate", Color(1.0, 0.25, 0.28, 1.0), 0.12)
+		seed_flash_tween.parallel().tween_property(seed_hud, "modulate", Color(1.0, 0.35, 0.35, 1.0), 0.12)
+		seed_flash_tween.tween_property(seed_frame, "modulate", Color.WHITE, 0.12)
+		seed_flash_tween.parallel().tween_property(seed_hud, "modulate", Color.WHITE, 0.12)
+
 func _handle_plant_blocked(reason: String) -> void:
 	if reason.contains("hết hạt"):
-		_toast("No cubes left. Press Space on a cube to take it back.")
+		_flash_seed_hud()
 		return
 	if reason.contains("đang đứng") or reason.contains("cùng tọa độ"):
-		_toast("You are standing where the cube would appear.")
+		_toast("Cannot plant while both witches share the same tile.")
 		return
 	var p: Array = state.p[0]
 	var x := int(p[0])
@@ -499,13 +436,9 @@ func _load_library() -> void:
 
 func _select_level(index: int) -> void:
 	if index < 0 or index >= library.size(): return
-	# A direct jump (debug select, import, tests) abandons any story scene in progress.
-	after_dialogue = Callable()
-	if dialogue != null: dialogue.stop()
 	picker.select(index)
 	engine = EngineScript.new(library[index].level)
 	_reset()
-	_play_level_music(index)
 
 func _import_file(path: String) -> void:
 	var parsed := Loader.read(path)
@@ -533,13 +466,25 @@ func _reset() -> void:
 	history.clear()
 	_render()
 
+func _ice_input_locked() -> bool:
+	for board in boards:
+		if board.input_locked(): return true
+	return false
+
 func _act(action: int) -> void:
-	if engine == null or is_transitioning or is_paused or dialogue.is_playing() or engine.won(state) or engine.lost(state): return
+	if engine == null or is_transitioning or is_paused or engine.won(state) or engine.lost(state): return
+	if _ice_input_locked(): return
+	var recalling := false
+	var recall_cell: Array = []
 	if action == 4:
+		# Planting unlocks at level 3+ (seedLimit > 0). Silent no-op while locked.
+		if engine.seed_limit() == 0: return
 		var reason: String = engine.plant_reason(state)
 		if not reason.is_empty():
 			_handle_plant_blocked(reason)
 			return
+		recall_cell = state.p[0].duplicate()
+		recalling = engine.coord(recall_cell) in state.trees
 	var next: Dictionary = engine.advance(state,action)
 	if next == state:
 		if action < 4:
@@ -548,21 +493,60 @@ func _act(action: int) -> void:
 	if action < 4:
 		for i in range(2):
 			if next.p[i] == state.p[i]: boards[i].bump()
-	if action == 4:
-		var p: Array = state.p[0]
-		var summoned: bool = next.trees.size() > state.trees.size()
-		if summoned and engine.tile(1,p[0],p[1]) == "W": _play_sfx("seal",1.4)
-		else: _play_sfx("cube",0.9 if summoned else 0.45)
 	history.append(state.duplicate(true))
 	state = next
 	_render()
+	if recalling:
+		_play_seed_recall(recall_cell)
 	if engine.lost(state): _show_loss_popup()
-	elif engine.won(state):
-		_play_sfx("win",2.6)
-		_begin_book_transition()
+	elif engine.won(state): _begin_book_transition()
+
+func _seed_hud_center() -> Vector2:
+	if seed_frame == null: return get_viewport_rect().size * Vector2(0.9, 0.08)
+	return seed_frame.get_global_rect().get_center()
+
+func _play_seed_recall(cell: Array) -> void:
+	if art == null or fx_layer == null or boards.is_empty(): return
+	var start: Vector2 = boards[0].seed_screen_center(cell)
+	var target := _seed_hud_center()
+	var flyer := TextureRect.new()
+	flyer.texture = art.seed_texture
+	flyer.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	flyer.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	flyer.custom_minimum_size = Vector2(36, 36)
+	flyer.size = Vector2(36, 36)
+	flyer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	flyer.global_position = start - flyer.size * 0.5
+	fx_layer.add_child(flyer)
+	var flight := create_tween()
+	flight.tween_property(flyer, "global_position", target - flyer.size * 0.5, 0.42).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	flight.parallel().tween_property(flyer, "scale", Vector2(0.65, 0.65), 0.42)
+	flight.tween_callback(func():
+		flyer.queue_free()
+		_burst_seed_hud()
+	)
+
+func _burst_seed_hud() -> void:
+	if seed_frame == null: return
+	seed_frame.scale = Vector2(1.12, 1.12)
+	var pop := create_tween()
+	pop.tween_property(seed_frame, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var center := _seed_hud_center()
+	for i in range(10):
+		var spark := ColorRect.new()
+		spark.color = Color("e6c984", 0.95)
+		spark.size = Vector2(4, 4)
+		spark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		spark.global_position = center
+		fx_layer.add_child(spark)
+		var dir := Vector2.RIGHT.rotated(TAU * float(i) / 10.0) * randf_range(28.0, 54.0)
+		var tw := create_tween()
+		tw.tween_property(spark, "global_position", center + dir, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.parallel().tween_property(spark, "modulate:a", 0.0, 0.35)
+		tw.tween_callback(spark.queue_free)
 
 func _undo() -> void:
-	if is_transitioning or is_paused or dialogue.is_playing() or history.is_empty(): return
+	if is_transitioning or is_paused or history.is_empty(): return
 	_hide_loss_popup()
 	state = history.pop_back()
 	_render()
@@ -574,7 +558,7 @@ func _toggle_pause() -> void:
 	if is_transitioning: return
 	is_paused = not is_paused
 	pause_panel.visible = is_paused
-	pause_button.text = "Resume · Esc" if is_paused else "Pause · Esc"
+	pause_button.text = "▶" if is_paused else "⏸"
 
 func _book_origin(room: int) -> Vector2:
 	var viewport_size := get_viewport_rect().size
@@ -598,11 +582,9 @@ func _begin_book_transition() -> void:
 
 func _translation_copy() -> Dictionary:
 	var fallback := [
-		{"title":"Two hands, one sentence","body":"A spell survives only when two times read it together. What is set down in the past is still standing in the present.","illustration":""},
-		{"title":"The weight of a cube","body":"A summoned cube may become a wall, a key, or the hand that keeps an old mechanism pressed and awake.","illustration":""},
-		{"title":"Stitching the rift","body":"A crack in the present can be sealed by a cube left there in the past. Step lightly: an open crack still takes whoever walks into it.","illustration":""},
-		{"title":"Written in Niran","body":"This page was copied by a Niran hand three hundred years ago. It has not been read aloud in Nira since the ships came.","illustration":""},
-		{"title":"Those who would forget","body":"An empire that takes a people's books does not need to burn them. It only needs someone at home to agree that they were dangerous.","illustration":""},
+		{"title":"Two hands, one sentence","body":"A spell survives only when two worlds read it together. Seeds placed in the past reshape the future.","illustration":""},
+		{"title":"The future can be held","body":"A living tree may become a boundary, a bridge, or the hand that keeps an old mechanism awake.","illustration":""},
+		{"title":"Water remembers","body":"A seed cast into a future river becomes a lily. Step lightly: unmarked water still takes a witch beneath it.","illustration":""},
 		{"title":"The archive opens","body":"Every translated page returns one lost fragment of magic to the people who first wrote it.","illustration":""}
 	]
 	var custom: Variant = engine.level.get("translation",{})
@@ -649,10 +631,6 @@ func _continue_after_translation() -> void:
 	is_translating = false
 	translation_panel.visible = false
 	transition_overlay.visible = true
-	var after_scene: String = dialogue.scene_for("after:" + _level_key(picker.selected))
-	if not after_scene.is_empty() and dialogue.play(after_scene):
-		after_dialogue = _swap_to_next_level
-		return
 	_swap_to_next_level()
 
 func _swap_to_next_level() -> void:
@@ -666,14 +644,12 @@ func _swap_to_next_level() -> void:
 	state = engine.initial()
 	history.clear()
 	_render()
-	_play_level_music(next_index)
 	_set_transition_veil(_book_origin(0),1.65,1.0)
 	var incoming := create_tween()
 	incoming.tween_method(func(value: float): _set_transition_veil(_book_origin(0),value,1.0),0.0,1.65,0.75).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	incoming.tween_callback(func():
 		transition_overlay.visible = false
 		is_transitioning = false
-		_play_story_before(next_index)
 	)
 
 func _render() -> void:
@@ -685,6 +661,8 @@ func _render() -> void:
 	seed_button.tooltip_text = ""
 	undo_button.disabled = history.is_empty()
 	replay_button.disabled = is_transitioning
+	# Hide seed HUD until planting is unlocked (seedLimit == 0 on early tutorial levels).
+	seed_frame.visible = engine.seed_limit() != 0
 	seed_hud.text = "∞" if remaining < 0 else str(remaining)
 	next_button.visible = false
 	if not engine.lost(state): _hide_loss_popup()
@@ -698,12 +676,6 @@ func _fit_boards() -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo or file_dialog.visible: return
-	if dialogue.is_playing(): return
-	if level_select_panel.visible:
-		if event.keycode == KEY_ESCAPE:
-			_hide_level_select()
-			get_viewport().set_input_as_handled()
-		return
 	if is_translating:
 		if translation_next.visible and event.keycode in [KEY_SPACE, KEY_RIGHT]:
 			_continue_after_translation()

@@ -2,6 +2,9 @@ extends Control
 
 # Code-drawn parchment book. Left page: glyphs morph into English in reading order
 # with sparkle particles. Right page: tutorial illustration after translation finishes.
+const GLYPH_SHEET: Texture2D = preload("res://assets/glyphs/hieroglyph_ref.png")
+const GLYPH_COLS := 8
+const GLYPH_ROWS := 5
 var open_amount: float = 0.0:
 	set(value):
 		open_amount = clampf(value, 0.0, 1.0)
@@ -26,15 +29,52 @@ var page_body := ""
 var illustration := ""
 var art: Resource
 
-var _slots: Array = [] # {ch:String, pos:Vector2, title:bool}
+var _slots: Array = [] # {ch, glyph_pos, latin_pos, title, size, cell}
 var _layout_size := Vector2.ZERO
 var _particles: Array = [] # {pos:Vector2, vel:Vector2, age:float, life:float, hue:float}
 var _last_done := -1
+## Sandstone background removed; only carved ink remains for parchment composite.
+var _glyph_cutout: Texture2D
+var _book_font: Font
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(900, 520)
+	_prepare_glyph_cutout()
+	_book_font = _make_book_font()
 	set_process(true)
 	queue_redraw()
+
+func _make_book_font() -> Font:
+	# Soft literary serif for the translated English page.
+	var sf := SystemFont.new()
+	sf.font_names = PackedStringArray(["Georgia", "Palatino Linotype", "Book Antiqua", "Times New Roman", "Cambria", "serif"])
+	sf.font_italic = true
+	return sf
+
+func _font() -> Font:
+	return _book_font if _book_font != null else ThemeDB.fallback_font
+
+func _prepare_glyph_cutout() -> void:
+	if GLYPH_SHEET == null: return
+	var src: Image = GLYPH_SHEET.get_image()
+	if src == null: return
+	src = src.duplicate()
+	if src.is_compressed():
+		src.decompress()
+	src.convert(Image.FORMAT_RGBA8)
+	for y in range(src.get_height()):
+		for x in range(src.get_width()):
+			var c := src.get_pixel(x, y)
+			# Stone fill is bright tan; carved grooves are darker brown.
+			var lum := c.r * 0.299 + c.g * 0.587 + c.b * 0.114
+			if lum >= 0.62:
+				src.set_pixel(x, y, Color(0, 0, 0, 0))
+			else:
+				# Keep carving as warm ink with alpha from darkness.
+				var ink_a := clampf((0.62 - lum) / 0.42, 0.0, 1.0)
+				ink_a = pow(ink_a, 0.75)
+				src.set_pixel(x, y, Color(0.30, 0.18, 0.10, ink_a))
+	_glyph_cutout = ImageTexture.create_from_image(src)
 
 func prepare(title: String, body: String, kind: String = "", textures: Resource = null) -> void:
 	page_title = title
@@ -74,12 +114,41 @@ func _ensure_layout() -> void:
 	# Layout against the fully-open page so glyph positions stay stable while the book opens.
 	var metrics := _page_metrics(area, 1.0)
 	var left: Rect2 = metrics.left_text
-	_layout_text_block(page_title, left, true, 17.0, 22.0)
-	var body_top := left.position.y + 36.0
-	if not page_title.is_empty():
-		body_top = _slots[_slots.size() - 1].pos.y + 28.0 if not _slots.is_empty() else left.position.y + 40.0
-	var body_rect := Rect2(left.position.x, body_top, left.size.x, left.end.y - body_top)
-	_layout_text_block(page_body, body_rect, false, 13.0, 18.0)
+	# Latin is the source of truth so tutorial copy is never truncated by wide glyph cells.
+	var title_latin := _layout_latin_block(page_title, left, true, 22.0, 28.0)
+	var latin_body_top := left.position.y + 40.0
+	if not title_latin.is_empty():
+		latin_body_top = title_latin[title_latin.size() - 1].latin_pos.y + 30.0
+	var latin_body_rect := Rect2(left.position.x, latin_body_top, left.size.x, left.end.y - latin_body_top)
+	var body_latin := _layout_latin_block(page_body, latin_body_rect, false, 17.0, 23.0)
+	# If body still overflows, retry once with a slightly tighter leading (font unchanged).
+	if _count_chars(page_body) > body_latin.size():
+		body_latin = _layout_latin_block(page_body, latin_body_rect, false, 16.0, 21.0)
+	var title_glyphs := _layout_glyph_block(page_title, left, true, 20.0, 34.0, _fit_glyph_scale(page_title, left, 20.0, 34.0, 1.55))
+	var glyph_body_top := left.position.y + 44.0
+	if not title_glyphs.is_empty():
+		glyph_body_top = title_glyphs[title_glyphs.size() - 1].glyph_pos.y + 36.0
+	var glyph_body_rect := Rect2(left.position.x, glyph_body_top, left.size.x, left.end.y - glyph_body_top)
+	var body_glyphs := _layout_glyph_block(page_body, glyph_body_rect, false, 16.0, 28.0, _fit_glyph_scale(page_body, glyph_body_rect, 16.0, 28.0, 1.45))
+	_merge_dual_slots(title_glyphs, title_latin)
+	_merge_dual_slots(body_glyphs, body_latin)
+
+func _count_chars(text: String) -> int:
+	var n := 0
+	for c in text:
+		if String(c) != " " and String(c) != "\n" and String(c) != "\r":
+			n += 1
+	return n
+
+func _fit_glyph_scale(text: String, rect: Rect2, font_size: float, line_height: float, preferred: float) -> float:
+	# Shrink glyph cells just enough so the full tutorial text still gets a glyph each.
+	var scale := preferred
+	while scale > 0.85:
+		var laid := _layout_glyph_block(text, rect, false, font_size, maxf(line_height * (scale / preferred), font_size * 1.15), scale)
+		if laid.size() >= _count_chars(text):
+			return scale
+		scale -= 0.08
+	return 0.85
 
 func _book_texture() -> Texture2D:
 	return art.get("open_book_texture") if art != null else null
@@ -106,28 +175,58 @@ func _page_metrics(area: Vector2, open_override: float = -1.0) -> Dictionary:
 	var top := center.y - height * 0.5
 	var bottom := center.y + height * 0.5
 	var spine := center.x
-	var left_text := Rect2(spine - half + 52.0, top + 78.0, half - 84.0, bottom - top - 120.0)
+	var left_text := Rect2(spine - half + 52.0, top + 72.0, half - 84.0, bottom - top - 100.0)
 	var right_art := Rect2(spine + 42.0, top + 78.0, half - 90.0, bottom - top - 120.0)
 	return {
 		"center": center, "half": half, "top": top, "bottom": bottom, "spine": spine,
 		"left_text": left_text, "right_art": right_art
 	}
 
-func _layout_text_block(text: String, rect: Rect2, is_title: bool, font_size: float, line_height: float) -> void:
-	if text.is_empty() or rect.size.y < line_height: return
-	var font := ThemeDB.fallback_font
+func _layout_glyph_block(text: String, rect: Rect2, is_title: bool, font_size: float, line_height: float, cell_scale: float) -> Array:
+	var out: Array = []
+	if text.is_empty() or rect.size.y < line_height: return out
+	var cell := font_size * cell_scale
+	var space_w := cell * 0.55
 	var x := rect.position.x
 	var y := rect.position.y + font_size
 	var max_x := rect.end.x
-	# Preserve explicit newlines by processing paragraph by paragraph.
 	var paragraphs := text.replace("\r", "").split("\n")
 	for p_i in range(paragraphs.size()):
 		if p_i > 0:
 			x = rect.position.x
-			y += line_height * 0.85
+			y += line_height
 		var paragraph: String = paragraphs[p_i]
-		if paragraph.is_empty():
-			continue
+		if paragraph.is_empty(): continue
+		var parts := paragraph.split(" ")
+		for w_i in range(parts.size()):
+			var word: String = parts[w_i]
+			var word_width := float(word.length()) * cell
+			if x > rect.position.x and x + word_width > max_x:
+				x = rect.position.x
+				y += line_height
+			if y > rect.end.y: return out
+			for c in word:
+				out.append({"ch": String(c), "glyph_pos": Vector2(x + cell * 0.5, y), "title": is_title, "size": font_size, "cell": cell})
+				x += cell
+			if w_i < parts.size() - 1:
+				x += space_w
+	return out
+
+func _layout_latin_block(text: String, rect: Rect2, is_title: bool, font_size: float, line_height: float) -> Array:
+	# Normal readable English spacing — independent from hieroglyph cell grid.
+	var out: Array = []
+	if text.is_empty() or rect.size.y < line_height: return out
+	var font := _font()
+	var x := rect.position.x
+	var y := rect.position.y + font_size
+	var max_x := rect.end.x
+	var paragraphs := text.replace("\r", "").split("\n")
+	for p_i in range(paragraphs.size()):
+		if p_i > 0:
+			x = rect.position.x
+			y += line_height * 1.05
+		var paragraph: String = paragraphs[p_i]
+		if paragraph.is_empty(): continue
 		var parts := paragraph.split(" ")
 		for w_i in range(parts.size()):
 			var word: String = parts[w_i]
@@ -136,14 +235,32 @@ func _layout_text_block(text: String, rect: Rect2, is_title: bool, font_size: fl
 			if x > rect.position.x and x + word_width > max_x:
 				x = rect.position.x
 				y += line_height
-			if y > rect.end.y:
-				return
-			for c in token:
+			# Keep laying out past the soft bottom so tutorial copy is never silently dropped.
+			for c in word:
 				var ch := String(c)
 				var advance := font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, int(font_size)).x
-				if ch != " ":
-					_slots.append({"ch": ch, "pos": Vector2(x, y), "title": is_title, "size": font_size})
-				x += maxf(advance, font_size * 0.28)
+				out.append({"ch": ch, "latin_pos": Vector2(x, y), "title": is_title, "size": font_size})
+				x += maxf(advance, font_size * 0.22)
+			if w_i < parts.size() - 1:
+				x += font.get_string_size(" ", HORIZONTAL_ALIGNMENT_LEFT, -1, int(font_size)).x
+	return out
+
+func _merge_dual_slots(glyphs: Array, latins: Array) -> void:
+	# Prefer full Latin copy; synthesize glyph positions if glyph layout still fell short.
+	var n := latins.size()
+	for i in range(n):
+		var l: Dictionary = latins[i]
+		var g: Dictionary = glyphs[i] if i < glyphs.size() else {}
+		var glyph_pos: Vector2 = g.get("glyph_pos", l.latin_pos + Vector2(6, -4))
+		var cell: float = float(g.get("cell", l.size * 1.2))
+		_slots.append({
+			"ch": l.ch,
+			"glyph_pos": glyph_pos,
+			"latin_pos": l.latin_pos,
+			"title": l.title,
+			"size": l.size,
+			"cell": cell
+		})
 
 func _emit_translation_particles(previous_progress: float) -> void:
 	_ensure_layout()
@@ -152,7 +269,7 @@ func _emit_translation_particles(previous_progress: float) -> void:
 	if done <= _last_done: return
 	for i in range(_last_done + 1, mini(done + 1, _slots.size())):
 		var slot: Dictionary = _slots[i]
-		var origin: Vector2 = slot.pos + Vector2(4, -6)
+		var origin: Vector2 = slot.latin_pos + Vector2(3, -8)
 		for n in range(5):
 			_particles.append({
 				"pos": origin + Vector2(randf_range(-3, 3), randf_range(-4, 2)),
@@ -217,25 +334,30 @@ func _draw_left_translation() -> void:
 	if _slots.is_empty(): return
 	var count := float(_slots.size())
 	var cursor := translate_progress * count
+	var font := _font()
 	for i in range(_slots.size()):
 		var slot: Dictionary = _slots[i]
-		var pos: Vector2 = slot.pos
 		var font_size: float = slot.size
+		var cell: float = float(slot.get("cell", font_size * 1.4))
 		var local := cursor - float(i)
+		var glyph_pos: Vector2 = slot.glyph_pos
+		var letter_pos: Vector2 = slot.latin_pos
+		var glyph_size := cell * 0.92
+		var glyph_rect := Rect2(glyph_pos - Vector2(glyph_size * 0.5, glyph_size * 0.78), Vector2(glyph_size, glyph_size))
 		if local < 0.0:
-			_draw_glyph(pos + Vector2(font_size * 0.25, -font_size * 0.35), i)
+			_draw_glyph_art(glyph_rect, i)
 		elif local >= 1.0:
-			var ink := Color("513928") if slot.title else Color("5d4430")
-			draw_string(ThemeDB.fallback_font, pos, slot.ch, HORIZONTAL_ALIGNMENT_LEFT, -1, int(font_size), ink)
+			var ink := Color("4a3220") if slot.title else Color("5a4030")
+			draw_string(font, letter_pos, slot.ch, HORIZONTAL_ALIGNMENT_LEFT, -1, int(font_size), ink)
 		else:
-			# In-place morph: glyph fades out while Latin letter pops in.
+			# Morph: glyph fades in its grid; English appears with normal kerning.
 			var glyph_a := 1.0 - local
 			var letter_a := local
-			_draw_glyph(pos + Vector2(font_size * 0.25, -font_size * 0.35), i, glyph_a)
-			var ink2 := Color("513928", letter_a) if slot.title else Color("5d4430", letter_a)
-			var pop := 1.0 + (1.0 - absf(local - 0.5) * 2.0) * 0.18
-			draw_set_transform(pos, 0.0, Vector2(pop, pop))
-			draw_string(ThemeDB.fallback_font, Vector2.ZERO, slot.ch, HORIZONTAL_ALIGNMENT_LEFT, -1, int(font_size), ink2)
+			_draw_glyph_art(glyph_rect, i, glyph_a)
+			var ink2 := Color("4a3220", letter_a) if slot.title else Color("5a4030", letter_a)
+			var pop := 1.0 + (1.0 - absf(local - 0.5) * 2.0) * 0.12
+			draw_set_transform(letter_pos, 0.0, Vector2(pop, pop))
+			draw_string(font, Vector2.ZERO, slot.ch, HORIZONTAL_ALIGNMENT_LEFT, -1, int(font_size), ink2)
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 func _draw_particles() -> void:
@@ -254,6 +376,8 @@ func _draw_right_illustration(rect: Rect2) -> void:
 			_illust_river(rect, a)
 		"cube", "seed":
 			_illust_seed(rect, a)
+		"plant_space":
+			_illust_plant_space(rect, a)
 
 func _illust_tex(texture: Texture2D, rect: Rect2, tint: Color) -> void:
 	if texture == null: return
@@ -343,7 +467,62 @@ func _illust_seed(rect: Rect2, a: float) -> void:
 	]), Color("e6c984", 0.95 * a))
 	draw_string(ThemeDB.fallback_font, Vector2(rect.position.x + 10, rect.end.y - 10), "Small cube then → big cube now", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e8d7a4", 0.9 * a))
 
-func _draw_glyph(pos: Vector2, index: int, alpha: float = 0.78) -> void:
+func _illust_plant_space(rect: Rect2, a: float) -> void:
+	# Clear Space-to-plant tutorial for unlocking seeds on the next level.
+	draw_rect(rect, Color("141f28", 0.97 * a), true)
+	var pad := 14.0
+	var top := Rect2(rect.position + Vector2(pad, pad), Vector2(rect.size.x - pad * 2.0, rect.size.y * 0.42))
+	draw_rect(top, Color("1c2c36", 0.95 * a), true)
+	draw_rect(top, Color("7ec8c4", 0.35 * a), false, 2.0)
+	# Past witch plants a seed.
+	if art != null:
+		_illust_tex(art.witch_past_texture, Rect2(top.position + Vector2(18, 18), Vector2(top.size.y * 0.72, top.size.y * 0.72)), Color(1, 1, 1, a))
+		_illust_tex(art.seed_texture, Rect2(top.position + Vector2(top.size.x * 0.38, top.size.y * 0.42), Vector2(44, 44)), Color(1, 1, 1, a))
+		_illust_tex(art.tree_texture, Rect2(top.position + Vector2(top.size.x * 0.62, 10), Vector2(top.size.y * 0.78, top.size.y * 0.78)), Color(1, 1, 1, a))
+	draw_string(ThemeDB.fallback_font, top.position + Vector2(18, 16), "PAST", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("9ed6bd", a))
+	draw_string(ThemeDB.fallback_font, top.position + Vector2(top.size.x * 0.62, 16), "PRESENT", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("9ed6bd", a))
+	# Arrow past -> present
+	var ay := top.position.y + top.size.y * 0.55
+	var ax0 := top.position.x + top.size.x * 0.50
+	draw_line(Vector2(ax0 - 18, ay), Vector2(ax0 + 18, ay), Color("e6c984", 0.95 * a), 3.0)
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(ax0 + 24, ay), Vector2(ax0 + 12, ay - 8), Vector2(ax0 + 12, ay + 8)
+	]), Color("e6c984", 0.95 * a))
+	# Giant SPACE key
+	var key := Rect2(rect.position.x + rect.size.x * 0.18, rect.position.y + rect.size.y * 0.52, rect.size.x * 0.64, rect.size.y * 0.28)
+	var key_bg := Color("243844", 0.98 * a)
+	var key_edge := Color("e6c984", 0.95 * a)
+	draw_rect(key, key_bg, true)
+	draw_rect(key, key_edge, false, 3.0)
+	draw_rect(Rect2(key.position + Vector2(6, 6), key.size - Vector2(12, 12)), Color("1a2830", 0.9 * a), true)
+	var label := "SPACE"
+	var font := ThemeDB.fallback_font
+	var fs := 34
+	var tw := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	draw_string(font, Vector2(key.get_center().x - tw * 0.5, key.get_center().y + 12), label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("f3e7c0", a))
+	draw_string(font, Vector2(rect.position.x + 16, rect.end.y - 12), "Press SPACE to plant a seed", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("e8d7a4", 0.95 * a))
+
+func _glyph_src_rect(index: int) -> Rect2:
+	var sheet: Texture2D = _glyph_cutout if _glyph_cutout != null else GLYPH_SHEET
+	var i := index % (GLYPH_COLS * GLYPH_ROWS)
+	var col := i % GLYPH_COLS
+	var row := int(i / GLYPH_COLS)
+	var tw := float(sheet.get_width())
+	var th := float(sheet.get_height())
+	var gw := tw / float(GLYPH_COLS)
+	var gh := th / float(GLYPH_ROWS)
+	# Inset each cell so we crop a single carved symbol rather than the grid gutters.
+	return Rect2(col * gw + gw * 0.10, row * gh + gh * 0.12, gw * 0.80, gh * 0.76)
+
+func _draw_glyph_art(dest: Rect2, index: int, alpha: float = 1.0) -> void:
+	var sheet: Texture2D = _glyph_cutout if _glyph_cutout != null else GLYPH_SHEET
+	if sheet == null:
+		_draw_glyph_fallback(dest.get_center(), index, alpha)
+		return
+	# Transparent cutout only — sits on parchment with no sandstone plate behind it.
+	draw_texture_rect_region(sheet, dest, _glyph_src_rect(index), Color(1, 1, 1, 0.95 * alpha))
+
+func _draw_glyph_fallback(pos: Vector2, index: int, alpha: float = 0.78) -> void:
 	var ink := Color("604433", alpha)
 	match index % 5:
 		0:
@@ -352,16 +531,12 @@ func _draw_glyph(pos: Vector2, index: int, alpha: float = 0.78) -> void:
 		1:
 			draw_line(pos + Vector2(-9, -8), pos + Vector2(0, 9), ink, 1.7)
 			draw_line(pos + Vector2(0, 9), pos + Vector2(9, -8), ink, 1.7)
-			draw_line(pos + Vector2(-6, 1), pos + Vector2(6, 1), ink, 1.4)
 		2:
 			draw_arc(pos, 9.0, -1.2, 1.5, 12, ink, 1.7)
-			draw_circle(pos + Vector2(2, -1), 1.8, ink)
 		3:
 			draw_line(pos + Vector2(0, -10), pos + Vector2(0, 10), ink, 1.7)
-			draw_line(pos + Vector2(-8, -4), pos + Vector2(8, 4), ink, 1.5)
 		4:
 			draw_arc(pos, 8.5, 0.2, 5.8, 8, ink, 1.5)
-			draw_circle(pos + Vector2(0, -11), 1.6, ink)
 
 func draw_shadow_ellipse(center: Vector2, radius: Vector2, color: Color) -> void:
 	var points := PackedVector2Array()

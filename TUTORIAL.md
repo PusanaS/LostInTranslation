@@ -4,23 +4,38 @@ Project root for active Godot work: `C:\Users\Admin\Documents\lost-in-translatio
 
 A mirrored copy may also exist under `D:\Eramus Game\Lost in translation\godot`. Prefer this Documents folder when iterating UI / tutorial.
 
+## Active project path (GitHub)
+
+`D:\Eramus Game\Lost In Translation Project Res\LostInTranslation`
+
 ## Folder map
 
 | Path | Role |
 | --- | --- |
 | `project.godot` | Godot 4.7 project; press **F5** here |
 | `scenes/main.tscn` | Play scene |
-| `scripts/main.gd` | HUD, input, win/loss flow, translation screen, music/SFX, debug level select |
-| `scripts/dialogue_view.gd` | Story dialogue overlay (portraits + textbox) |
-| `story/dialogue.json` | All story text, scene triggers and per-level music |
+| `scenes/level_editor.tscn` | In-engine level editor |
+| `scripts/main.gd` | HUD icons, seed frame, recall FX, win/loss, translation flow |
 | `scripts/puzzle_engine.gd` | Deterministic rules (parity with web `engine.js`) |
-| `scripts/board_view.gd` | Board draw + red tile flash feedback |
-| `scripts/translation_book.gd` | Code-drawn book; left page glyphs **or** tutorial illustration |
+| `scripts/board_view.gd` | Board draw, idle bob, red tile flash |
+| `scripts/star_field.gd` | Soft animated star background |
+| `scripts/translation_book.gd` | Book UI; left glyphs→English; right illustration |
 | `scripts/tutorial_art.gd` | Code-drawn tutorial / loss illustrations |
 | `scripts/lost_clock.gd` | Legacy clock glyph (kept; loss popup now uses tutorial art) |
+| `assets/glyphs/hieroglyph_ref.png` | Stone hieroglyph sheet for left-page glyphs |
 | `levels/*.json` | Shipped levels; optional `translation` block |
 | `art/game_art.tres` | Texture slots for tiles / witches / objects |
 | `tests/` | Headless parity checks vs web fixtures |
+
+## Ingame presentation notes
+
+- Witches idle-bob gently while standing still.
+- Goal books idle-bob with a soft golden halo + spark particles.
+- River tiles show scrolling water lines; ice tiles get diagonal mirror glints.
+- Replay / Pause are icon-only buttons; seed count sits in a gold-framed HUD.
+- Out of seeds: **no toast** — the seed frame + `0` flash red twice.
+- Recalling a seed: seed flies from the plant cell to the HUD, then the frame pops with spark particles.
+- Translation glyphs use `hieroglyph_ref.png` with sandstone keyed out at runtime so only carved ink sits on the parchment.
 
 ## Loader note (important)
 
@@ -34,7 +49,7 @@ After both witches stand on their books:
 2. Translation screen opens (`THE TRANSLATION`).
 3. **Left page:** starts as ancient glyphs; each glyph morphs in place into English (title + body), reading order top→bottom / left→right, with sparkle particles at the translation frontier.
 4. **Right page:** tutorial illustration (`translation.illustration`) fades in **only after** the English page is fully translated.
-5. Continue with **Space**, **→**, or the button.
+5. Continue with **Space**, **→**, or the **Next page** button.
 
 Level JSON shape:
 
@@ -46,9 +61,7 @@ Level JSON shape:
 }
 ```
 
-`illustration` values currently supported: `"rift"` (alias `"river"`), `"cube"` (alias `"seed"`), or `""` / omitted for glyphs only.
-
-> Rift update: level 1's page is now **Cracks between worlds** (`rift`), level 2's is **Cubes across dimensions** (`cube`). The notes below describe the original river/seed wording.
+`illustration` values currently supported: `"river"`, `"seed"`, or `""` / omitted for glyphs only.
 
 Book reveal pacing is **10% slower** than the original tween timings in `main.gd` → `_show_translation()`.
 
@@ -58,17 +71,22 @@ Maps themselves are unchanged; the book after a win teaches the **next** idea.
 
 ### Level 1 (`levels/01-level.json`)
 
+- **seedLimit:** `0` — planting locked; seed HUD hidden.
 - **Teaches for later maps:** river water kills witches (drown).
-- **Illustration:** `river` — villagers with spears on the bank; witch struggling in the water (code-drawn + existing witch texture).
+- **Illustration:** `river`
 - **Title:** The river takes witches
-- **Body (EN):** Since ancient times, people have hated witches for powers they could not control. When they caught a witch, they threw her into the river. / Step into a river, and your witch will drown.
 
 ### Level 2 (`levels/02-level.json`)
 
-- **Teaches:** seed in the past → tree in the present (time-linked planting).
-- **Illustration:** `seed` — PAST seed / PRESENT tree split panel.
+- **seedLimit:** `0` — planting still locked; seed HUD hidden.
+- **Teaches next unlock:** press **SPACE** to plant (main planting tutorial card).
+- **Illustration:** `plant_space` — clear SPACE key + past seed → present tree.
 - **Title:** Seeds across time
-- **Body (EN):** People had reason to fear them: a powerful witch could travel through time, reshaping both past and present. / Plant a seed in the past, and a tree grows in the present.
+
+### Level 3 (`levels/03-level.json`)
+
+- **seedLimit:** `1` — planting unlocked; seed HUD visible.
+- **Illustration:** `seed`
 
 ### Later levels
 

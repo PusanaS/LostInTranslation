@@ -42,10 +42,10 @@
     "normal",
     "normal"
   ],
-  "seedLimit": 3,
+  "seedLimit": 0,
   "translation": {
-    "title": "Cubes across time",
-    "body": "Dimension Magic folds time. What the young witch sets down in the past is still there in the present, grown large with years of magic.\n\nSummon a cube in the past and it blocks your path today. Leave one where a crack will open, and the crack is sealed so you can walk across.",
-    "illustration": "cube"
+    "title": "Seeds across time",
+    "body": "People had reason to fear them. A powerful witch could travel through time, reshaping both past and present with a single living seed.\n\nOn the next page, planting unlocks. Stand in the past and press SPACE to plant a seed — a tree will rise at the same place in the present. Press SPACE again on that seed to pick it back up.",
+    "illustration": "plant_space"
   }
 }
